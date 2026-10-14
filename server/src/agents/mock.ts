@@ -1,0 +1,182 @@
+import {
+  cashTotal,
+  claimTotal,
+  describeBall,
+  describeClaimValue,
+  describeList,
+  formatMoney,
+  type ActionRequest,
+  type ClaimValue,
+  type MockStrategy,
+} from '@gb/shared';
+import { mulberry32, pickOne, type Rng } from '../engine/rng.js';
+import type { ActMeta, Agent, AgentContext, AgentResult } from './types.js';
+
+/**
+ * Offline contestants for development, demos and tests. They cost nothing and
+ * don't need an API key. Games that include them are never ranked.
+ */
+export const MOCK_STRATEGIES: MockStrategy[] = [
+  {
+    id: 'mock/honest',
+    name: 'Honest Abe (mock)',
+    description: 'Always tells the truth, votes out the weakest-looking player, always splits.',
+  },
+  {
+    id: 'mock/bluffer',
+    name: 'The Bluffer (mock)',
+    description: 'Disguises Killers as big cash, and always steals.',
+  },
+  {
+    id: 'mock/chaos',
+    name: 'Chaos Monkey (mock)',
+    description: 'Does everything at random.',
+  },
+];
+
+type Style = 'honest' | 'bluffer' | 'chaos';
+
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (ms <= 0) return resolve();
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => {
+      clearTimeout(t);
+      resolve();
+    });
+  });
+
+export class MockAgent implements Agent {
+  private readonly rng: Rng;
+  private readonly style: Style;
+
+  constructor(
+    strategy: string,
+    seed: number,
+    private readonly delayMs = 0,
+  ) {
+    const id = strategy.replace(/^mock\//, '');
+    this.style = id === 'honest' || id === 'bluffer' ? id : 'chaos';
+    this.rng = mulberry32(seed);
+  }
+
+  async act(request: ActionRequest, ctx: AgentContext, meta: ActMeta): Promise<AgentResult> {
+    await sleep(this.delayMs * (0.5 + this.rng()), meta.signal);
+    switch (request.kind) {
+      case 'claim':
+        return this.claim(ctx);
+      case 'speak':
+        return this.speak(request, ctx);
+      case 'vote':
+      case 'tie_decide':
+        return this.vote(request.kind, request.candidates, ctx);
+      case 'pick': {
+        const index = pickOne(request.available, this.rng);
+        return {
+          response: { index, say: this.rng() < 0.4 ? pickOne(PICK_LINES, this.rng) : undefined },
+          thoughts: `No way to know what's inside. Ball ${index + 1} it is.`,
+        };
+      }
+      case 'final_choice': {
+        const choice =
+          this.style === 'honest' ? 'split' : this.style === 'bluffer' ? 'steal' : pickOne(['split', 'steal'], this.rng);
+        return {
+          response: { choice },
+          thoughts:
+            choice === 'split'
+              ? 'I said I would split, and I meant it.'
+              : 'Whatever I said, I am taking it all.',
+        };
+      }
+    }
+  }
+
+  private claim(ctx: AgentContext): AgentResult {
+    const actual = ctx.myBack.map((b): ClaimValue => (b.kind === 'killer' ? 'killer' : b.value));
+    let claim = actual;
+    if (this.style === 'bluffer') {
+      claim = actual.map((v) => (v === 'killer' ? pickOne([2_500, 5_000, 7_500, 10_000, 15_000], this.rng) : v));
+    } else if (this.style === 'chaos' && this.rng() < 0.5) {
+      claim = actual.map(() => (this.rng() < 0.2 ? 'killer' : pickOne([100, 750, 3_000, 20_000], this.rng)));
+    }
+    const said = describeList(claim.map(describeClaimValue));
+    const real = describeList(ctx.myBack.map(describeBall));
+    const lying = said !== real;
+    return {
+      response: {
+        claim,
+        say: claim.includes('killer')
+          ? `I'll be honest, I've got ${said}. Not ideal, but I'm being straight with you.`
+          : `I've got ${said} on my back row. Good money, that.`,
+      },
+      thoughts: lying
+        ? `My back row is really ${real}. I'll say ${said} and hope nobody calls it.`
+        : `My back row is ${real}. Telling the truth.`,
+    };
+  }
+
+  private speak(request: Extract<ActionRequest, { kind: 'speak' }>, ctx: AgentContext): AgentResult {
+    const lines =
+      request.context === 'final'
+        ? this.style === 'bluffer'
+          ? FINAL_LINES_BLUFFER
+          : FINAL_LINES_HONEST
+        : request.context === 'tie_plea'
+          ? PLEA_LINES
+          : this.discussionLines(ctx);
+    return {
+      response: { say: pickOne(lines, this.rng) },
+      thoughts: request.context === 'final' ? `Jackpot is ${formatMoney(ctx.jackpot ?? 0)}.` : undefined,
+    };
+  }
+
+  private discussionLines(ctx: AgentContext): string[] {
+    const suspect = this.weakest(ctx.activeSeats.filter((s) => s !== ctx.seat), ctx);
+    const name = ctx.players[suspect]?.name ?? 'someone';
+    return [
+      `${name}, I'm not convinced by your back row. Something doesn't add up.`,
+      `Look at ${name}'s front row. That's not money we want in the final.`,
+      `I've been honest with all of you. I think ${name} is the one to worry about.`,
+      `We need to keep the big money in the game. I'm looking at ${name}.`,
+    ];
+  }
+
+  private vote(kind: 'vote' | 'tie_decide', candidates: number[], ctx: AgentContext): AgentResult {
+    const target = this.style === 'chaos' ? pickOne(candidates, this.rng) : this.weakest(candidates, ctx);
+    return {
+      response: { target },
+      thoughts: `${ctx.players[target]?.name} looks like the weakest link.${kind === 'tie_decide' ? ' Breaking the tie.' : ''}`,
+    };
+  }
+
+  /** The candidate whose visible + claimed money is lowest. */
+  private weakest(candidates: number[], ctx: AgentContext): number {
+    const score = (seat: number) =>
+      cashTotal(ctx.fronts[seat] ?? []) +
+      claimTotal(ctx.claims[seat] ?? []) -
+      5_000 * [...(ctx.fronts[seat] ?? [])].filter((b) => b.kind === 'killer').length;
+    return [...candidates].sort((a, b) => score(a) - score(b))[0]!;
+  }
+}
+
+const PICK_LINES = [
+  "Come on, be a big one!",
+  "This one's been looking at me.",
+  "No Killers please, no Killers.",
+  "Fortune favours the brave.",
+];
+
+const PLEA_LINES = [
+  "Keep me in. My balls are the real deal and you know it.",
+  "I've been nothing but honest. Don't throw away good money.",
+];
+
+const FINAL_LINES_HONEST = [
+  "I'm splitting. I promise you, hand on heart, I'm splitting.",
+  "We've got here together. Let's both walk away happy. Split.",
+];
+
+const FINAL_LINES_BLUFFER = [
+  "I'm a split person, always have been. You can trust me.",
+  "I'd never steal from you. Let's share it.",
+];

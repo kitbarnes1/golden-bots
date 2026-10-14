@@ -1,0 +1,134 @@
+#!/bin/bash
+# First-boot setup for the Golden Balls server (Amazon Linux 2023, ARM).
+# Rendered by Terraform; values in ${"$"}{...} are filled in at plan time.
+set -euxo pipefail
+exec > >(tee -a /var/log/golden-balls-setup.log) 2>&1
+
+# --- Docker + compose plugin -------------------------------------------------
+dnf install -y docker
+systemctl enable --now docker
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-aarch64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+
+# --- Data volume (survives instance replacement) -----------------------------
+DEVICE=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_id}
+for _ in $(seq 1 120); do
+  [ -e "$DEVICE" ] && break
+  sleep 5
+done
+if ! blkid "$DEVICE"; then
+  mkfs.ext4 -L gbdata "$DEVICE"
+fi
+mkdir -p /var/lib/golden-balls
+grep -q 'LABEL=gbdata' /etc/fstab || echo 'LABEL=gbdata /var/lib/golden-balls ext4 defaults,nofail 0 2' >> /etc/fstab
+mount -a
+mkdir -p /var/lib/golden-balls/data
+chown 1000:1000 /var/lib/golden-balls/data  # the container's "node" user
+
+# --- App files ---------------------------------------------------------------
+mkdir -p /opt/golden-balls
+cd /opt/golden-balls
+
+cat > docker-compose.yml <<'EOF'
+services:
+  app:
+    image: $${APP_IMAGE}
+    restart: unless-stopped
+    env_file:
+      - path: ./app.env
+        format: raw
+    volumes:
+      - /var/lib/golden-balls/data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  cloudflared:
+    image: ${cloudflared}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    env_file:
+      - path: ./tunnel.env
+        format: raw
+    depends_on:
+      - app
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+EOF
+
+cat > deploy.sh <<'EOF'
+#!/bin/bash
+# Usage: deploy.sh [image-tag]   (default: latest)
+# Re-reads settings from SSM Parameter Store, pulls the image and restarts.
+set -euo pipefail
+cd /opt/golden-balls
+TAG="$${1:-latest}"
+REGION="${region}"
+
+render_env() {
+  aws ssm get-parameters-by-path --region "$REGION" --path "$1" --with-decryption --recursive --output json |
+    python3 -c 'import json, sys
+for p in json.load(sys.stdin)["Parameters"]:
+    print(p["Name"].rsplit("/", 1)[1] + "=" + p["Value"].replace("\n", " "))'
+}
+umask 077
+render_env "${ssm_prefix}/app/" > app.env
+render_env "${ssm_prefix}/tunnel/" > tunnel.env
+echo "APP_IMAGE=${repository_url}:$TAG" > .env
+
+aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${registry}"
+docker compose pull
+docker compose up -d --remove-orphans
+docker image prune -f
+echo "Deployed ${repository_url}:$TAG"
+EOF
+chmod 700 deploy.sh
+
+cat > backup.sh <<'EOF'
+#!/bin/bash
+# Consistent snapshot of the SQLite database, uploaded to S3.
+set -euo pipefail
+cd /opt/golden-balls
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+docker compose exec -T app node server/backup.js /data/backup.db
+aws s3 cp /var/lib/golden-balls/data/backup.db "s3://${backup_bucket}/backups/golden-balls-$STAMP.db" --region "${region}"
+rm -f /var/lib/golden-balls/data/backup.db
+EOF
+chmod 700 backup.sh
+
+cat > /etc/systemd/system/golden-balls-backup.service <<'EOF'
+[Unit]
+Description=Back up the Golden Balls database to S3
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/golden-balls/backup.sh
+EOF
+
+cat > /etc/systemd/system/golden-balls-backup.timer <<'EOF'
+[Unit]
+Description=Nightly Golden Balls backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now golden-balls-backup.timer
+
+# --- First deploy ----------------------------------------------------------------
+# On a brand-new setup there's no image in ECR yet; GitHub Actions deploys once
+# it has pushed one, so a failure here is expected and harmless.
+./deploy.sh latest || echo "No image yet: push to main (or run the Deploy workflow) to deploy."
