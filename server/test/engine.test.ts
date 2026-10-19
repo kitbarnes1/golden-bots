@@ -414,7 +414,7 @@ describe('GameEngine', () => {
       await new GameEngine({
         players,
         agents: [slow, slow, slow, slow],
-        options: options(34, { chatSeconds: 1, finalChatSeconds: 1, chatMaxMessages: 40 }),
+        options: options(34, { chatSeconds: 1, finalChatSeconds: 1, reflectSeconds: 0, chatMaxMessages: 40 }),
         emit: (e) => events.push(e),
       }).run();
       const r1 = floorEvents(events, 'r1');
@@ -431,8 +431,22 @@ describe('GameEngine', () => {
       const said = speechesIn(final.inside);
       for (let i = 0; i + 1 < said.length; i++) expect(said[i + 1]!.seat).not.toBe(said[i]!.seat);
 
-      const silent = await play(36, [], { chatSeconds: 0, finalChatSeconds: 0 });
+      const silent = await play(36, [], { chatSeconds: 0, finalChatSeconds: 0, reflectSeconds: 0 });
       expect(silent.events.some((e) => e.type === 'chat_started')).toBe(false);
+    });
+
+    it('lets the players left talk over each vote, without whoever just went', async () => {
+      const { events } = await play(37, [], { chatMaxMessages: 12 });
+      const after = ofType(events, 'chat_started').filter((e) => e.reflect);
+      expect(after.map((e) => e.stage)).toEqual(['r1', 'r2']);
+      for (const floor of after) {
+        const out = ofType(events, 'eliminated').find((e) => e.stage === floor.stage)!;
+        expect(floor.seq).toBeGreaterThan(out.seq);
+        expect(floor.participants).not.toContain(out.seat);
+        expect(floor.maxMessages).toBe(6);
+      }
+      expect(after[0]!.participants).toHaveLength(3);
+      expect(after[1]!.participants).toHaveLength(2);
     });
   });
 

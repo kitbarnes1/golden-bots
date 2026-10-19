@@ -32,6 +32,8 @@ export interface GameOptions {
   chatSeconds: number;
   /** Length of the finalists' chat before Split or Steal, in seconds (0 = no chat). */
   finalChatSeconds: number;
+  /** Chat after each vote, for the players left to react to the result, in seconds (0 = none). */
+  reflectSeconds: number;
   /** Most messages in any one chat, so fast models can't run up a big bill. */
   chatMaxMessages: number;
   /** If true, AI contestants are named after their model; otherwise they get show-style first names. */
@@ -45,6 +47,7 @@ export interface GameOptions {
 export const DEFAULT_OPTIONS: Omit<GameOptions, 'seed'> = {
   chatSeconds: 60,
   finalChatSeconds: 60,
+  reflectSeconds: 30,
   chatMaxMessages: 12,
   revealModelNames: true,
   reasoningEffort: 'none',
@@ -55,8 +58,8 @@ export type BinOrWin = 'bin' | 'win';
 export type ActionRequest =
   | { kind: 'claim'; stage: 'r1' | 'r2'; backCount: number }
   | { kind: 'speak'; stage: Stage; context: SpeakContext; prompt: string }
-  /** A turn in an open-floor chat. replyTo = someone who just spoke to you. */
-  | { kind: 'chat'; stage: Stage; secondsLeft: number; participants: number[]; replyTo?: number }
+  /** A turn in an open-floor chat. replyTo = someone who just spoke to you. reflect = the chat after a vote. */
+  | { kind: 'chat'; stage: Stage; secondsLeft: number; participants: number[]; replyTo?: number; reflect?: boolean }
   | { kind: 'vote'; stage: 'r1' | 'r2'; candidates: number[] }
   | { kind: 'tie_decide'; stage: 'r1' | 'r2'; candidates: number[] }
   | { kind: 'pick'; action: BinOrWin; available: number[] }

@@ -256,6 +256,16 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
             </select>
           </label>
           <label className="field">
+            <span>Chat after each vote</span>
+            <select value={options.reflectSeconds} onChange={(e) => setOptions((o) => ({ ...o, reflectSeconds: Number(e.target.value) }))}>
+              {CHAT_LENGTHS.map((s) => (
+                <option key={s} value={s}>
+                  {formatLength(s)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
             <span>Chat before Split or Steal</span>
             <select
               value={options.finalChatSeconds}

@@ -38,6 +38,13 @@ export class Host {
     );
   }
 
+  reflect(name: string, seconds: number): string {
+    return this.one(
+      `So ${name} leaves us. The rest of you have ${seconds} seconds to talk that over.`,
+      `${name} is gone. How do you feel about that? ${seconds} seconds before we play on.`,
+    );
+  }
+
   callVote(): string {
     return 'Time to vote. Secretly choose the player you want to eliminate.';
   }

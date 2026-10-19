@@ -98,6 +98,8 @@ interface Floor {
   participants: number[];
   endsAt: number;
   max: number;
+  /** The chat after a vote. */
+  reflect: boolean;
   messages: number;
   lastSpeaker: number | null;
   /** Who owes a reply to whom: addressee -> asker, oldest first. */
@@ -317,6 +319,15 @@ export class GameEngine {
     const tied = active.filter((s) => tally.get(s) === most);
     const out = tied.length === 1 ? tied[0]! : await this.tieBreak(stage, tied);
     this.eliminate(stage, out);
+
+    // The players left talk over the result and the reveal. Whoever just went doesn't
+    // join: a knocked-out human can see everyone's secrets now.
+    const reflectSeconds = this.deps.options.reflectSeconds;
+    const left = this.activeSeats();
+    if (reflectSeconds > 0 && left.length >= 2) {
+      this.say(this.host.reflect(this.seats[out]!.info.name, reflectSeconds));
+      await this.openFloor(stage, left, reflectSeconds, true);
+    }
   }
 
   private async tieBreak(stage: 'r1' | 'r2', tied: number[]): Promise<number> {
@@ -542,14 +553,17 @@ export class GameEngine {
    * longest. Humans can post whenever they like. Ends when time runs out, the
    * message cap is reached, or everyone has nothing more to say.
    */
-  private async openFloor(stage: Stage, participants: number[], seconds: number): Promise<void> {
+  private async openFloor(stage: Stage, participants: number[], seconds: number, reflect = false): Promise<void> {
     const durationMs = Math.round(seconds * 1000);
     if (durationMs <= 0 || participants.length < 2) return;
+    const cap = Math.max(1, this.deps.options.chatMaxMessages);
     const floor: Floor = {
       stage,
       participants,
       endsAt: Date.now() + durationMs,
-      max: Math.max(1, this.deps.options.chatMaxMessages),
+      // The chat after a vote is a quick reaction, so it gets half the messages.
+      max: reflect ? Math.max(2, Math.ceil(cap / 2)) : cap,
+      reflect,
       messages: 0,
       lastSpeaker: null,
       owed: new Map(),
@@ -562,7 +576,15 @@ export class GameEngine {
       wake: null,
     };
     this.floor = floor;
-    this.push({ type: 'chat_started', stage, participants, durationMs, endsAt: floor.endsAt, maxMessages: floor.max });
+    this.push({
+      type: 'chat_started',
+      stage,
+      participants,
+      durationMs,
+      endsAt: floor.endsAt,
+      maxMessages: floor.max,
+      ...(reflect ? { reflect: true } : {}),
+    });
 
     let reason: ChatEndReason = 'time';
     try {
@@ -602,6 +624,7 @@ export class GameEngine {
           secondsLeft: Math.max(1, Math.ceil(left / 1000)),
           participants,
           ...(askedBy !== undefined ? { replyTo: askedBy } : {}),
+          ...(reflect ? { reflect: true } : {}),
         });
         if (res.kind === 'chat' && res.say) {
           this.recordChat(floor, next, res.say, res.to);

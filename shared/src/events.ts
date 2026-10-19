@@ -42,6 +42,8 @@ export type GameEventBody =
       /** Server clock, ms. */
       endsAt: number;
       maxMessages: number;
+      /** The chat after a vote, rather than the one before it. */
+      reflect?: boolean;
     }
   | { type: 'chat_pass'; stage: Stage; seat: number }
   | { type: 'chat_ended'; stage: Stage; reason: ChatEndReason }

@@ -23,7 +23,7 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, 
 /** "Open floor · 0:42 left" banner shown to everyone while contestants talk. */
 export function FloorBanner({ floor, skewMs, live }: { floor: FloorView; skewMs: number; live: boolean }) {
   const left = useSecondsLeft(floor.endsAt, skewMs);
-  const label = floor.stage === 'final' ? 'Split or Steal talks' : 'Open floor';
+  const label = floor.stage === 'final' ? 'Split or Steal talks' : floor.reflect ? 'After the vote' : 'Open floor';
   return (
     <div className="floor-banner" role="status">
       <span className="floor-banner__dot" aria-hidden />

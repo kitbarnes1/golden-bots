@@ -80,7 +80,7 @@ export function transcript(events: GameEvent[], seat: number, players: PlayerInf
         lines.push(e.to !== undefined ? `${n(e.seat)} to ${n(e.to)}: "${e.say}"` : `${n(e.seat)}: "${e.say}"`);
         break;
       case 'chat_started':
-        lines.push(`--- OPEN FLOOR (${Math.round(e.durationMs / 1000)} seconds to talk) ---`);
+        lines.push(`--- ${e.reflect ? 'AFTER THE VOTE' : 'OPEN FLOOR'} (${Math.round(e.durationMs / 1000)} seconds to talk) ---`);
         break;
       case 'chat_ended':
         lines.push('--- The floor is closed ---');
@@ -181,7 +181,9 @@ Respond with JSON: {"thoughts": "...", "say": "..."}`;
       const purpose =
         ctx.stage === 'final'
           ? `This is your conversation with ${describeList(others)} before you both secretly choose SPLIT or STEAL (jackpot ${formatMoney(ctx.jackpot ?? 0)}).`
-          : 'This is the open discussion before the secret vote.';
+          : request.reflect
+            ? 'The vote is over. React to the result and the reveal: who was lying, who you trust now, and what it means for what comes next.'
+            : 'This is the open discussion before the secret vote.';
       const reply =
         request.replyTo !== undefined ? `${name(p, request.replyTo)} just spoke to you directly, so reply to them.\n` : '';
       return `OPEN FLOOR: about ${request.secondsLeft} seconds left. ${purpose}

@@ -128,7 +128,8 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
       case 'chat_started':
         items.push(
           <div key={key} className="feed__floor">
-            {e.stage === 'final' ? 'Split or Steal talks' : 'Open floor'} · {Math.round(e.durationMs / 1000)} seconds
+            {e.stage === 'final' ? 'Split or Steal talks' : e.reflect ? 'After the vote' : 'Open floor'} ·{' '}
+            {Math.round(e.durationMs / 1000)} seconds
           </div>,
         );
         break;

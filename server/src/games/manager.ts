@@ -353,6 +353,7 @@ export class GameManager {
     return {
       chatSeconds: clamp(o.chatSeconds, 0, 300, DEFAULT_OPTIONS.chatSeconds),
       finalChatSeconds: clamp(o.finalChatSeconds, 0, 300, DEFAULT_OPTIONS.finalChatSeconds),
+      reflectSeconds: clamp(o.reflectSeconds, 0, 300, DEFAULT_OPTIONS.reflectSeconds),
       chatMaxMessages: clamp(o.chatMaxMessages, 2, 40, DEFAULT_OPTIONS.chatMaxMessages),
       revealModelNames: typeof o.revealModelNames === 'boolean' ? o.revealModelNames : DEFAULT_OPTIONS.revealModelNames,
       reasoningEffort: effort,

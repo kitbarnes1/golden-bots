@@ -55,6 +55,8 @@ export interface FloorView {
   endsAt: number;
   messages: number;
   maxMessages: number;
+  /** The chat after a vote. */
+  reflect: boolean;
 }
 
 export interface GameView {
@@ -202,6 +204,7 @@ function apply(v: GameView, e: GameEvent): void {
         endsAt: e.endsAt,
         messages: 0,
         maxMessages: e.maxMessages,
+        reflect: e.reflect === true,
       };
       break;
     case 'speech':
