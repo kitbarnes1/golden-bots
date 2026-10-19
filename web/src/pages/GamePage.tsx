@@ -179,6 +179,9 @@ export function GamePage() {
           {mySeat !== undefined && ' You can see your own back row.'}
         </p>
       )}
+      {live && viewer.omniscient && mySeat !== undefined && view.seats[mySeat]?.eliminatedStage && (
+        <p className="notice">You're out, so now you can see everyone's hidden balls and private thoughts.</p>
+      )}
       {live && !replaying && view.pausedFor !== undefined && view.pausedFor !== mySeat && (
         <p className="notice">Paused: waiting for {view.players[view.pausedFor]?.name ?? 'the player'} to come back.</p>
       )}

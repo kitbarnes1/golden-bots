@@ -128,10 +128,12 @@ describe('API', () => {
     while (manager.isRunning(id)) {
       const me = await getGame(id, playerToken);
       expect(me.viewer.seat).toBe(seat);
-      // The human sees their own back row but nobody else's, and no thoughts.
-      for (const e of me.events) {
-        if (e.type === 'back_row') expect(e.seat).toBe(seat);
-        expect(e.type).not.toBe('thoughts');
+      // While still in, the human sees their own back row but nobody else's, and no thoughts.
+      if (!me.events.some((e) => e.type === 'eliminated' && e.seat === seat)) {
+        for (const e of me.events) {
+          if (e.type === 'back_row') expect(e.seat).toBe(seat);
+          expect(e.type).not.toBe('thoughts');
+        }
       }
       // Join each open floor: ask an AI something directly, then say we're done.
       const opened = me.events.findLast((e) => e.type === 'chat_started' || e.type === 'chat_ended');
@@ -185,6 +187,60 @@ describe('API', () => {
     // Chat is rejected once the game is over.
     const late = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers: { 'x-player-token': playerToken! }, payload: { text: 'hi' } });
     expect(late.statusCode).toBe(409);
+  });
+
+  it('shows everything to everyone once the human player is knocked out', async () => {
+    // Slow the mocks a little, or the game is over before we can look at it with the human out.
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    await setup({ mockDelayMs: 30 });
+    // Mocks are deterministic per seed; claiming two Killers soon gets the human voted off.
+    let checked = false;
+    for (let seed = 1; seed <= 10 && !checked; seed++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/games',
+        payload: {
+          seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))],
+          options: { chatSeconds: 0, finalChatSeconds: 0, seed },
+        },
+      });
+      const { id, playerToken, seat } = res.json<CreateGameResponse>();
+      while (manager.isRunning(id)) {
+        const me = await getGame(id, playerToken);
+        if (me.events.some((e) => e.type === 'eliminated' && e.seat === seat)) {
+          if (!manager.isRunning(id)) break;
+          expect(me.viewer).toEqual({ seat, omniscient: true });
+          expect(me.events.some((e) => e.type === 'thoughts')).toBe(true);
+          expect(me.events.some((e) => e.type === 'back_row' && e.seat !== seat)).toBe(true);
+          expect((await getGame(id)).viewer).toEqual({ omniscient: true });
+          checked = true;
+          break;
+        }
+        const answered = new Set(me.events.filter((e) => e.type === 'input_received').map((e) => (e as { requestId: string }).requestId));
+        const next = me.events.findLast(
+          (e): e is Extract<GameEvent, { type: 'awaiting_input' }> => e.type === 'awaiting_input' && !answered.has(e.requestId),
+        );
+        if (!next) {
+          await new Promise((r) => setTimeout(r, 5));
+          continue;
+        }
+        const response =
+          next.request.kind === 'claim'
+            ? { claim: Array.from({ length: next.request.backCount }, () => 'killer'), say: 'Killers, sorry.' }
+            : answer(next.request, me, seat!);
+        await app.inject({
+          method: 'POST',
+          url: `/api/games/${id}/action`,
+          headers: { 'x-player-token': playerToken! },
+          payload: { requestId: next.requestId, response },
+        });
+      }
+      manager.abort(id);
+      await waitFor(() => !manager.isRunning(id));
+    }
+    expect(checked).toBe(true);
   });
 
   it('validates human moves and rejects strangers', async () => {

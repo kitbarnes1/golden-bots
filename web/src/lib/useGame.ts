@@ -36,6 +36,8 @@ export function useGame(id: string): GameData {
     let ended = false;
     let source: EventSource | null = null;
     let onVisibility: (() => void) | null = null;
+    /** The human player, while their secrets are still being kept from this viewer. */
+    let humanSeat: number | undefined;
     lastSeq.current = -1;
 
     api
@@ -48,6 +50,7 @@ export function useGame(id: string): GameData {
         setError(null);
         lastSeq.current = d.events.at(-1)?.seq ?? -1;
         if (d.status !== 'running') return;
+        humanSeat = d.viewer.omniscient ? undefined : d.players.find((p) => p.kind === 'human')?.seat;
 
         // A player's game pauses while they're away, so let go of it when the tab is hidden.
         if (d.viewer.seat !== undefined) {
@@ -79,6 +82,10 @@ export function useGame(id: string): GameData {
         // Events arrive within a moment of being created, so this approximates clock skew.
         setClockSkewMs(event.ts - Date.now());
         setEvents((prev) => [...prev, event]);
+        // With the human knocked out there's nothing left to hide: reload for the full story.
+        if (event.type === 'eliminated' && event.seat === humanSeat && !cancelled) {
+          setTimeout(() => setVersion((n) => n + 1), 300);
+        }
       });
       es.addEventListener('status', (msg) => {
         const s = JSON.parse((msg as MessageEvent<string>).data) as LiveStatus;

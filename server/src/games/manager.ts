@@ -204,7 +204,7 @@ export class GameManager {
   private schedulePause(game: RunningGame, ms: number): void {
     clearTimeout(game.pauseTimer);
     game.pauseTimer = setTimeout(() => {
-      if (game.playerStreams.size === 0 && game.humanSeat !== undefined && this.running.has(game.id)) {
+      if (game.playerStreams.size === 0 && game.humanSeat !== undefined && this.humanStillIn(game) && this.running.has(game.id)) {
         game.engine.pause(game.humanSeat);
       }
     }, ms);
@@ -235,8 +235,13 @@ export class GameManager {
   viewerFor(gameId: string, token: string | undefined): Viewer {
     const seat = token ? this.db.seatForToken(gameId, token) : undefined;
     const live = this.running.get(gameId);
-    if (live?.hasHuman) return seat !== undefined ? { seat, omniscient: false } : { omniscient: false };
-    return seat !== undefined ? { seat, omniscient: true } : { omniscient: true };
+    const omniscient = !(live && this.humanStillIn(live));
+    return seat !== undefined ? { seat, omniscient } : { omniscient };
+  }
+
+  /** Once the human is knocked out they can't affect the game, so nothing needs hiding (or pausing for them). */
+  private humanStillIn(game: RunningGame): boolean {
+    return game.humanSeat !== undefined && !game.engine.events.some((e) => e.type === 'eliminated' && e.seat === game.humanSeat);
   }
 
   /** Stream a running game: backlog after `afterSeq`, then live messages. Returns an unsubscribe fn, or null if not running. */
