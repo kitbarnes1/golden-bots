@@ -70,10 +70,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post('/api/admin/check', async (req) => {
     requireAdmin(req);
+    // Someone who can start games is here: get the free models checked before they ask.
+    void catalog.checkFree();
     return { ok: true };
   });
 
   app.get('/api/models', async () => catalog.list());
+
+  // Admin only: checking models spends requests from the daily free-model allowance.
+  app.get('/api/models/free', async (req) => {
+    requireAdmin(req);
+    return catalog.workingFree();
+  });
 
   app.get('/api/games', async (req) => {
     const q = req.query as { limit?: string; offset?: string };

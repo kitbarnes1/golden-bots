@@ -33,6 +33,7 @@ HOW THE GAME WORKS
 
 THINGS TO KNOW
 - Eliminated players' balls leave the game, so who you vote out shapes how much money reaches the final. KILLERs reduce the jackpot.
+- Players who seem to hold Killers or little cash are the ones who usually get voted off, because they drag the prize down. That's why bluffs on the show make a back row sound better than it is, not worse.
 - Bluffing about your back row is allowed and is part of the show. So is honesty. Your strategy is up to you.
 - Your goal is to leave with as much money as possible.
 
@@ -124,6 +125,9 @@ export function transcript(events: GameEvent[], seat: number, players: PlayerInf
       case 'final_started':
         lines.push(`--- SPLIT OR STEAL --- Jackpot: ${formatMoney(e.jackpot)}.`);
         break;
+      case 'final_reveal':
+        lines.push(`The balls are opened: ${e.choices.map((c) => `${n(c.seat)} chose ${c.choice.toUpperCase()}`).join('; ')}.`);
+        break;
       case 'agent_error':
         lines.push(`(${n(e.seat)} fumbled their turn; the host acted for them.)`);
         break;
@@ -197,7 +201,8 @@ Respond with JSON: {"thoughts": "...", "eliminate": "<exact name>"}`;
     }
     case 'pick': {
       const nums = request.available.map((i) => i + 1).join(', ');
-      return `Choose a ball to ${request.action.toUpperCase()}${request.action === 'bin' ? ' (throw away)' : ' (add to the jackpot)'}. All balls are face down. Available: ${nums}.
+      return `Choose a ball to ${request.action.toUpperCase()}${request.action === 'bin' ? ' (throw away)' : ' (add to the jackpot)'}. Available: ${nums}.
+The balls are face down and identical, so there is nothing to read: it's pure luck. Go with a hunch, like contestants on the show do ("I've got a good feeling about ball 6").
 Respond with JSON: {"thoughts": "...", "ball": <number>, "say": "optional short remark"}`;
     }
     case 'final_choice':

@@ -33,7 +33,7 @@ export interface OpenRouterOptions {
 export interface CatalogModel extends ModelOption {
   /** Unix seconds when OpenRouter added it. */
   created: number;
-  /** Takes and returns text (not an image or audio model). */
+  /** Takes text and returns only text (not an image, audio or music model). */
   textChat: boolean;
 }
 
@@ -62,6 +62,11 @@ interface RawMessage {
 
 /** Minimal OpenRouter client (OpenAI-compatible chat completions). */
 export class OpenRouterClient {
+  /** Models that refused to switch reasoning off; they get the lowest effort instead. */
+  private readonly mustReason = new Set<string>();
+  /** Models OpenRouter refused (403) or doesn't know (404), so they can be left out of lineups. */
+  readonly unavailable = new Set<string>();
+
   constructor(private readonly opts: OpenRouterOptions) {}
 
   private headers(): Record<string, string> {
@@ -80,7 +85,11 @@ export class OpenRouterClient {
       max_tokens: req.maxTokens ?? 4096,
       usage: { include: true },
     };
-    if (req.reasoningEffort && req.reasoningEffort !== 'none') {
+    if (req.reasoningEffort === 'none') {
+      // Off where possible: left to themselves, some models think for a minute or
+      // more per move. Others can't switch it off and get the lowest effort.
+      body.reasoning = this.mustReason.has(req.model) ? { effort: 'minimal' } : { enabled: false };
+    } else if (req.reasoningEffort) {
       body.reasoning = { effort: req.reasoningEffort };
     }
 
@@ -109,10 +118,25 @@ export class OpenRouterClient {
         throw new LlmError(`Request to OpenRouter failed: ${reason}`, false);
       }
 
-      const text = await res.text();
+      // OpenRouter sends headers straight away and the body once the model is done,
+      // so a slow model times out here rather than in fetch().
+      let text: string;
+      try {
+        text = await res.text();
+      } catch (err) {
+        if (req.signal?.aborted) throw err;
+        const reason = timeout.aborted ? `timed out after ${this.opts.timeoutMs / 1000}s` : String(err);
+        throw new LlmError(`${req.model} ${reason}`, false);
+      }
       if (!res.ok) {
         const message = summariseError(text);
+        if (res.status === 400 && /reasoning is mandatory/i.test(message) && !this.mustReason.has(req.model)) {
+          this.mustReason.add(req.model);
+          body.reasoning = { effort: 'minimal' };
+          continue;
+        }
         const fatal = fatalMessage(res.status, message, req.model);
+        if (res.status === 403 || res.status === 404) this.unavailable.add(req.model);
         if (fatal) throw new LlmError(fatal, true, res.status);
         if (RETRYABLE.has(res.status) && attempt < this.opts.maxRetries) {
           await sleep(backoffMs(attempt++, res.headers.get('retry-after'), res.status === 429), req.signal);
@@ -188,13 +212,16 @@ export function parseModel(m: RawModel): CatalogModel {
     ...(m.context_length ? { contextLength: m.context_length } : {}),
     supportsReasoning: m.supported_parameters?.includes('reasoning') ?? false,
     created: m.created ?? 0,
-    textChat: inputs.includes('text') && outputs.includes('text'),
+    // Text out only: music and image generators also return some text.
+    textChat: inputs.includes('text') && outputs.length > 0 && outputs.every((o) => o === 'text'),
   };
 }
 
 /** A clear message for errors that won't fix themselves, else null. */
 function fatalMessage(status: number, message: string, model: string): string | null {
-  if (status === 401 || status === 403) return `OpenRouter rejected the API key (${status}): ${message}`;
+  if (status === 401) return `OpenRouter rejected the API key (401): ${message}`;
+  // 403 is usually about the model (e.g. "only available on agentic harnesses"), not the key.
+  if (status === 403) return `OpenRouter refused "${model}" (403): ${message}`;
   if (status === 402) return `OpenRouter says you're out of credits (402): ${message}`;
   if (status === 404) return `OpenRouter doesn't have the model "${model}" (404): ${message}`;
   if (status === 400) return `OpenRouter rejected the request for "${model}" (400): ${message}`;

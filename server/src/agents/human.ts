@@ -7,6 +7,11 @@ interface Pending {
   request: ActionRequest;
   resolve: (result: AgentResult) => void;
   timer: NodeJS.Timeout;
+  /** When autopilot takes over. */
+  deadline: number;
+  /** Time left on the clock while the game is paused. */
+  frozenMs?: number;
+  expire: () => void;
 }
 
 export type SubmitResult = { ok: true } | { ok: false; status: 400 | 409; error: string };
@@ -35,21 +40,45 @@ export class HumanAgent implements Agent {
       return { ...(await this.autopilot.act(request, ctx, meta)), thoughts: undefined, timedOut: true };
     }
     return new Promise<AgentResult>((resolve) => {
-      const timer = setTimeout(() => {
+      const expire = () => {
         this.pending = null;
         this.autopilotEngaged = true;
         void this.autopilot.act(request, ctx, meta).then(
           (r) => resolve({ ...r, thoughts: undefined, timedOut: true }),
           () => resolve({ response: null, timedOut: true }),
         );
-      }, this.timeoutMs);
-      this.pending = { requestId: meta.requestId, request, resolve, timer };
+      };
+      const pending: Pending = {
+        requestId: meta.requestId,
+        request,
+        resolve,
+        expire,
+        deadline: Date.now() + this.timeoutMs,
+        timer: setTimeout(expire, this.timeoutMs),
+      };
+      this.pending = pending;
       meta.signal.addEventListener('abort', () => {
-        clearTimeout(timer);
+        clearTimeout(pending.timer);
         this.pending = null;
         resolve({ response: null });
       });
     });
+  }
+
+  /** The game is paused while this person is away: stop the clock on their move. */
+  pause(): void {
+    const p = this.pending;
+    if (!p || p.frozenMs !== undefined) return;
+    clearTimeout(p.timer);
+    p.frozenMs = Math.max(0, p.deadline - Date.now());
+  }
+
+  resume(): void {
+    const p = this.pending;
+    if (!p || p.frozenMs === undefined) return;
+    p.deadline = Date.now() + p.frozenMs;
+    p.timer = setTimeout(p.expire, p.frozenMs);
+    delete p.frozenMs;
   }
 
   submit(requestId: string, response: unknown): SubmitResult {

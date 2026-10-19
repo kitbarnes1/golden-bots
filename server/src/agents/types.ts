@@ -49,6 +49,9 @@ export interface Agent {
   /** Humans get an awaiting_input event before act() is called. */
   readonly interactive?: boolean;
   act(request: ActionRequest, ctx: AgentContext, meta: ActMeta): Promise<AgentResult>;
+  /** The game is paused or resumed (humans stop their move clock). */
+  pause?(): void;
+  resume?(): void;
 }
 
 /** Thrown by agents that failed but still spent money doing so. */

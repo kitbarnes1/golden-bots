@@ -131,6 +131,8 @@ export class GameEngine {
   private readonly waiting = new Map<number, ActionRequest['kind']>();
   /** The conversation in progress, if any. */
   private floor?: Floor;
+  /** Set while a human player is away; moves wait until they're back. */
+  private paused: { since: number; seat: number; waiters: (() => void)[] } | null = null;
 
   constructor(private readonly deps: EngineDeps) {
     if (deps.players.length !== 4 || deps.agents.length !== 4) {
@@ -181,6 +183,45 @@ export class GameEngine {
     this.push({ type: 'game_over', payouts, jackpot });
     this.status([]);
     return { jackpot, payouts, stats: this.seats.map((s) => s.stats) };
+  }
+
+  /**
+   * Hold the game while the human in `seat` is away. A move already being made
+   * finishes; nothing new starts, and the chat and move clocks stop.
+   */
+  pause(seat: number): void {
+    if (this.paused || this.events.at(-1)?.type === 'game_over') return;
+    this.paused = { since: Date.now(), seat, waiters: [] };
+    for (const s of this.seats) s.agent.pause?.();
+    this.push({ type: 'paused', seat });
+    // An open floor waiting on the human re-checks straight away and stops.
+    this.floor?.wake?.();
+  }
+
+  resume(): void {
+    const p = this.paused;
+    if (!p) return;
+    this.paused = null;
+    const pausedMs = Date.now() - p.since;
+    if (this.floor) this.floor.endsAt += pausedMs;
+    for (const s of this.seats) s.agent.resume?.();
+    this.push({ type: 'resumed', seat: p.seat, pausedMs });
+    for (const wake of p.waiters) wake();
+  }
+
+  private async whilePaused(): Promise<void> {
+    while (this.paused) {
+      const p = this.paused;
+      await new Promise<void>((resolve) => {
+        const onAbort = () => resolve();
+        this.signal.addEventListener('abort', onAbort, { once: true });
+        p.waiters.push(() => {
+          this.signal.removeEventListener('abort', onAbort);
+          resolve();
+        });
+      });
+      this.throwIfAborted();
+    }
   }
 
   /** Record a fatal error in the game log (used when run() throws). */
@@ -475,6 +516,21 @@ export class GameEngine {
 
     this.push({ type: 'final_reveal', choices, outcome, payouts });
     this.say(this.host.reveal(outcome, jackpot, [this.seats[order[0]]!.info.name, this.seats[order[1]]!.info.name], stealer));
+
+    // Last words now the balls are open. Whoever was stolen from gets in first.
+    const first = outcome === 'one_steal' ? choices.find((c) => c.choice === 'split')!.seat : order[0];
+    for (const seat of [first, order.find((s) => s !== first)!]) {
+      const mine = choices.find((c) => c.seat === seat)!.choice;
+      const other = choices.find((c) => c.seat !== seat)!;
+      const otherName = this.seats[other.seat]!.info.name;
+      const won = payouts.find((p) => p.seat === seat)!.amount;
+      await this.speak(seat, {
+        kind: 'speak',
+        stage: 'final',
+        context: 'final_reaction',
+        prompt: `The balls are open. You chose ${mine.toUpperCase()} and ${otherName} chose ${other.choice.toUpperCase()}, so you leave with ${formatMoney(won)}. Give your honest reaction to ${otherName} and the audience in a sentence or two: how do you really feel?`,
+      });
+    }
     return payouts;
   }
 
@@ -512,6 +568,7 @@ export class GameEngine {
     try {
       for (;;) {
         this.throwIfAborted();
+        await this.whilePaused();
         const left = floor.endsAt - Date.now();
         if (left <= 0) break;
         // Once the AIs have used up the message cap, a human still gets their say
@@ -668,6 +725,7 @@ export class GameEngine {
    */
   private async ask(seat: number, request: ActionRequest): Promise<ActionResponse> {
     this.throwIfAborted();
+    await this.whilePaused();
     const s = this.seats[seat]!;
     const requestId = randomUUID();
     this.waiting.set(seat, request.kind);

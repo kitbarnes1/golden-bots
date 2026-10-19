@@ -17,7 +17,11 @@ thoughts as it plays, replay old games, and follow a leaderboard of how each mod
   reasoning tokens when the model provides them. Toggle them on or off, and switch on "Reveal
   hidden balls" to see who's lying while it happens.
 - **Play yourself**: take one of the four seats. While a human is playing, nobody (including
-  other tabs) can see hidden balls or AI thoughts until the game ends.
+  other tabs) can see hidden balls or AI thoughts until the game ends. The game pauses while
+  you're away from its page (another tab, or closed), and carries on when you come back.
+- **Rounds view**: a tab on every game that lays out each round's balls, front and back, with
+  what everyone claimed, who lied and who voted for whom, plus every Bin or Win pick.
+- **Last words**: after Split or Steal is revealed, both finalists react to how it went.
 - **Leaderboard**: average winnings per game, total and best wins, how often each model reaches
   the final, split rate, honesty (share of back-row claims that were true), final outcomes,
   fumbles (unusable replies) and API cost. There's also a chart of each model's running average.
@@ -50,11 +54,14 @@ docker compose up --build    # or the same thing in Docker
 Contestants can be any model on OpenRouter. The picker suggests one model from each major lab:
 by default the newest *mid-priced* one (at most $3 in / $15 out per million tokens), picked from
 OpenRouter's live catalogue, so the suggestions keep up with new releases. 🎲 **Random lineup**
-draws from those, and you can type any other model id. Set `FEATURED_MODELS` to choose the
+draws from those. Click a seat to search every model, filter by price (free, low, medium, high),
+or paste any other model id. Set `FEATURED_MODELS` to choose the
 suggestions yourself.
 
 **Playing for free:** models whose id ends in `:free` cost nothing, and the **Free lineup** button
-fills the table with them. They're rate-limited: 20 requests a minute, and 50 a day, rising to
+fills the table with them. Free models vary a lot (some are coding agents, some only work inside
+particular apps), so each is first asked one small game question, and only those that answer it
+properly get a seat. Results are cached for 12 hours. They're rate-limited: 20 requests a minute, and 50 a day, rising to
 1,000 a day once you've bought $10 of credits (a one-off; the credit stays in your account for
 paid models). A game makes roughly 50–90 model calls, so free models need that top-up to manage
 even one game a day.
@@ -94,7 +101,9 @@ on each game and on the leaderboard.
 Each turn, the model gets the rules, the game so far from its own point of view (the public
 transcript, its own back row, and its own earlier private notes) and one task: claim, chat,
 vote, pick a ball, or choose split or steal. It replies in JSON with a private `thoughts`
-field. Replies are validated; an unusable reply gets one retry with the error explained, and if
+field. Native reasoning is off by default (or as low as a model allows), because some models
+otherwise think for a minute or more per move and hog the open floor; turn it up under "Native
+reasoning" in the game options. Replies are validated; an unusable reply gets one retry with the error explained, and if
 that fails too the host makes a neutral move for the model (truthful claim, random vote, and so
 on). That counts as a "fumble" on the leaderboard.
 
@@ -132,7 +141,10 @@ The setup in `infra/terraform` creates:
 
 ### 1. Prerequisites
 
-- Terraform 1.6 or newer and AWS credentials for your account (`aws configure`).
+- Terraform 1.6 or newer and the AWS CLI, signed in as an identity that can create this stack.
+  `infra/iam/terraform-policy.json` is a policy scoped to it (EC2, one ECR repository,
+  `golden-balls-*` buckets, roles and SSM parameters, the GitHub OIDC provider, and Session
+  Manager on the app server): attach it to a `golden-balls-terraform` role and assume that role.
 - A Cloudflare API token (My Profile → API Tokens → Create Token → Custom) with:
   - Account → **Cloudflare Tunnel** → Edit
   - Zone → **DNS** → Edit, for `thekitbarnes.com`

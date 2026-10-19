@@ -108,6 +108,9 @@ export type GameEventBody =
   | { type: 'awaiting_input'; seat: number; requestId: string; request: ActionRequest }
   | { type: 'input_received'; seat: number; requestId: string }
   | { type: 'agent_error'; seat: number; action: ActionRequest['kind']; message: string }
+  /** The human in `seat` left the game page; nothing happens until they're back. */
+  | { type: 'paused'; seat: number }
+  | { type: 'resumed'; seat: number; pausedMs: number }
   | { type: 'game_error'; message: string };
 
 export type ChatEndReason = 'time' | 'quiet' | 'limit';

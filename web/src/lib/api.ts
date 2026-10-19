@@ -65,6 +65,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   info: () => request<ServerInfo>('/api/info'),
   models: () => request<ModelOption[]>('/api/models'),
+  /** Free models that just passed a quick check (admin only; can take ~30s). */
+  freeModels: () => request<ModelOption[]>('/api/models/free'),
   checkAdmin: () => request<{ ok: true }>('/api/admin/check', { method: 'POST' }),
   games: (limit = 30, offset = 0) => request<GameSummary[]>(`/api/games?limit=${limit}&offset=${offset}`),
   game: (id: string) => {

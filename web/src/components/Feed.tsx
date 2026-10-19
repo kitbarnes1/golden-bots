@@ -263,6 +263,20 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
           </div>,
         );
         break;
+      case 'paused':
+        items.push(
+          <div key={key} className="feed__muted">
+            Paused while {who(e.seat)} is away.
+          </div>,
+        );
+        break;
+      case 'resumed':
+        items.push(
+          <div key={key} className="feed__muted">
+            {who(e.seat)} is back after {Math.max(1, Math.round(e.pausedMs / 1000))}s. Play on.
+          </div>,
+        );
+        break;
       default:
         break;
     }

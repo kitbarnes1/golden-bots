@@ -9,6 +9,7 @@ import {
   type PlayerInfo,
 } from '@gb/shared';
 import { GameEngine, GameFatalError } from '../src/engine/engine.js';
+import { HumanAgent } from '../src/agents/human.js';
 import { MockAgent } from '../src/agents/mock.js';
 import { AgentError, type Agent, type AgentContext, type AgentResult } from '../src/agents/types.js';
 
@@ -167,6 +168,54 @@ describe('GameEngine', () => {
       expect(stats[0]!.finalChoice).toBe(x);
       expect(stats[1]!.finalChoice).toBe(y);
     }
+  });
+
+  it('holds every move while paused and carries on when resumed', async () => {
+    const events: GameEvent[] = [];
+    let engine: GameEngine | undefined;
+    let paused = false;
+    const agents = players.map(
+      (p) =>
+        new ScriptedAgent(7 + p.seat, (req) => {
+          if (!paused && req.kind === 'claim') {
+            paused = true;
+            engine!.pause(1);
+            setTimeout(() => engine!.resume(), 60);
+          }
+          return undefined;
+        }),
+    );
+    engine = new GameEngine({ players, agents, options: options(7), emit: (e) => events.push(e) });
+    await engine.run();
+
+    const pausedAt = events.findIndex((e) => e.type === 'paused');
+    const resumedAt = events.findIndex((e) => e.type === 'resumed');
+    expect(pausedAt).toBeGreaterThan(-1);
+    expect(resumedAt).toBeGreaterThan(pausedAt);
+    // Only the claim already being made lands while paused.
+    expect(ofType(events.slice(pausedAt, resumedAt), 'claim')).toHaveLength(1);
+    expect(ofType(events, 'resumed')[0]!.pausedMs).toBeGreaterThanOrEqual(50);
+    expect(events.at(-1)!.type).toBe('game_over');
+  });
+
+  it('lets the finalists react after the reveal, whoever was stolen from first', async () => {
+    const prompts: string[] = [];
+    const voteHigh: Script = (req) => (req.kind === 'vote' ? { target: Math.max(...req.candidates) } : undefined);
+    const finalist =
+      (choice: 'split' | 'steal'): Script =>
+      (req, ctx) => {
+        if (req.kind === 'final_choice') return { choice };
+        if (req.kind === 'speak' && req.context === 'final_reaction') {
+          prompts.push(req.prompt);
+          return { say: `${ctx.players[ctx.seat]!.name} reacts` };
+        }
+        return voteHigh(req, ctx);
+      };
+    const { events } = await play(99, [finalist('steal'), finalist('split'), voteHigh, voteHigh]);
+    const afterReveal = events.slice(events.findIndex((e) => e.type === 'final_reveal'));
+    expect(ofType(afterReveal, 'speech').map((s) => s.say)).toEqual(['Ben reacts', 'Ava reacts']);
+    expect(prompts[0]).toMatch(/You chose SPLIT and Ava chose STEAL/);
+    expect(events.at(-1)!.type).toBe('game_over');
   });
 
   it('settles a 2-2 tie by consensus of the untied players', async () => {
@@ -418,5 +467,23 @@ describe('GameEngine', () => {
       signal: controller.signal,
     });
     await expect(engine.run()).rejects.toThrow(/aborted/i);
+  });
+});
+
+describe('HumanAgent', () => {
+  it('stops the move clock while the game is paused', async () => {
+    const human = new HumanAgent(new MockAgent('mock/honest', 1), 80);
+    let done = false;
+    const result = human
+      .act({ kind: 'final_choice' }, {} as AgentContext, { requestId: 'r1', signal: new AbortController().signal })
+      .then((r) => {
+        done = true;
+        return r;
+      });
+    human.pause();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(done).toBe(false);
+    human.resume();
+    expect(await result).toMatchObject({ response: { choice: 'split' }, timedOut: true });
   });
 });

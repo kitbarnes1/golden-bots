@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { DEFAULT_OPTIONS, type GameOptions, type ModelOption, type SeatSpec, type ServerInfo } from '@gb/shared';
 import { adminKey, api, ApiError, playerToken } from '../lib/api';
+import { ModelPicker, type PriceTier } from './ModelPicker';
 
 interface SeatDraft {
   kind: 'ai' | 'human' | 'mock';
@@ -47,6 +48,8 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
   const [unlocked, setUnlocked] = useState(!info.requiresAdmin);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checkingFree, setCheckingFree] = useState(false);
+  const [tier, setTier] = useState<PriceTier>('all');
 
   const all = models ?? [];
   const featured = useMemo(() => all.filter((m) => m.featured), [all]);
@@ -95,8 +98,27 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
 
   const applyLineup = (pool: ModelOption[]) => {
     const picks = lineup(pool);
-    let n = 0;
-    setSeats((prev) => prev!.map((s) => (s.kind === 'human' ? s : { kind: 'ai', model: picks[n++]!, name: '' })));
+    // The counter lives inside the updater: React may run it twice (StrictMode).
+    setSeats((prev) => {
+      let n = 0;
+      return prev!.map((s) => (s.kind === 'human' ? s : { kind: 'ai', model: picks[n++]!, name: '' }));
+    });
+  };
+
+  // Only free models that just answered a test question, so a broken one can't stall the game.
+  const freeLineup = async () => {
+    setCheckingFree(true);
+    setError(null);
+    try {
+      const working = await api.freeModels();
+      if (working.length) applyLineup(working);
+      else setError('No free models are answering properly right now. Try again in a few minutes.');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) setError('Unlock with the admin password first.');
+      else setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCheckingFree(false);
+    }
   };
 
   const unlock = async () => {
@@ -141,18 +163,10 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
         <p className="notice">Couldn't load OpenRouter's model list. You can still type a model id.</p>
       ) : (
         <p className="muted small">
-          {all.length} models on OpenRouter. Type to search, or paste any model id. Models marked free cost nothing but are
-          rate-limited.
+          {all.length} models on OpenRouter. Click a seat to search them, or paste any model id. Free models cost nothing
+          but are rate-limited.
         </p>
       )}
-
-      <datalist id="model-list">
-        {all.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.free ? `${m.name} · free` : m.name}
-          </option>
-        ))}
-      </datalist>
 
       <div className="seats">
         {seats.map((seat, i) => {
@@ -181,14 +195,15 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
               </select>
               {seat.kind === 'ai' && (
                 <div className="seat__model">
-                  <input
-                    list="model-list"
+                  <ModelPicker
                     value={seat.model}
-                    placeholder="Search OpenRouter models, e.g. anthropic/…"
-                    onChange={(e) => update(i, { model: e.target.value })}
-                    aria-label={`Seat ${i + 1} model`}
+                    models={all}
+                    onChange={(id) => update(i, { model: id })}
+                    label={`Seat ${i + 1} model`}
+                    tier={tier}
+                    onTier={setTier}
                   />
-                  <small>{model ? [model.name, describe(model)].filter(Boolean).join(' · ') : seat.model ? 'Custom model id' : ''}</small>
+                  <small>{model ? describe(model) : seat.model ? 'Custom model id' : ''}</small>
                 </div>
               )}
               {seat.kind === 'human' && (
@@ -220,8 +235,8 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
             🎲 Random lineup
           </button>
           {free.length > 0 && (
-            <button type="button" className="btn btn--ghost btn--small" onClick={() => applyLineup(free)}>
-              Free lineup
+            <button type="button" className="btn btn--ghost btn--small" disabled={checkingFree} onClick={() => void freeLineup()}>
+              {checkingFree ? 'Checking free models…' : 'Free lineup'}
             </button>
           )}
         </div>
@@ -272,7 +287,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
               value={options.reasoningEffort}
               onChange={(e) => setOptions((o) => ({ ...o, reasoningEffort: e.target.value as GameOptions['reasoningEffort'] }))}
             >
-              <option value="none">Model default</option>
+              <option value="none">Off (fastest)</option>
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High (slower, pricier)</option>

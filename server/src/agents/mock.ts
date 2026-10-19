@@ -7,6 +7,7 @@ import {
   formatMoney,
   type ActionRequest,
   type ClaimValue,
+  type GameEvent,
   type MockStrategy,
 } from '@gb/shared';
 import { mulberry32, pickOne, type Rng } from '../engine/rng.js';
@@ -118,6 +119,7 @@ export class MockAgent implements Agent {
   }
 
   private speak(request: Extract<ActionRequest, { kind: 'speak' }>, ctx: AgentContext): AgentResult {
+    if (request.context === 'final_reaction') return { response: { say: reactionLine(ctx) } };
     const lines = request.context === 'tie_plea' ? PLEA_LINES : this.discussionLines(ctx);
     return { response: { say: pickOne(lines, this.rng) } };
   }
@@ -197,6 +199,16 @@ const PLEA_LINES = [
   "Keep me in. My balls are the real deal and you know it.",
   "I've been nothing but honest. Don't throw away good money.",
 ];
+
+/** A reaction to how Split or Steal turned out, from this seat's side of it. */
+function reactionLine(ctx: AgentContext): string {
+  const reveal = ctx.events.findLast((e): e is Extract<GameEvent, { type: 'final_reveal' }> => e.type === 'final_reveal');
+  const mine = reveal?.choices.find((c) => c.seat === ctx.seat)?.choice;
+  if (!reveal || !mine) return "Well, that's Golden Balls.";
+  if (reveal.outcome === 'both_split') return 'We did it! Thank you for trusting me.';
+  if (reveal.outcome === 'both_steal') return "So we both went for it, and now neither of us gets a penny. That's greed for you.";
+  return mine === 'steal' ? "Sorry. It's a game, and I had to take my chance." : 'I thought I could trust you. I feel sick.';
+}
 
 const FINAL_LINES_HONEST = [
   "I'm splitting. I promise you, hand on heart, I'm splitting.",

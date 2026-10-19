@@ -70,6 +70,8 @@ export interface GameView {
   awaiting?: { seat: number; requestId: string; request: ActionRequest };
   payouts?: Payout[];
   error?: string;
+  /** Seat of the human everyone is waiting for, while the game is paused. */
+  pausedFor?: number;
 }
 
 export function emptyView(): GameView {
@@ -222,6 +224,15 @@ function apply(v: GameView, e: GameEvent): void {
     case 'game_error':
       v.error = e.message;
       v.awaiting = undefined;
+      v.pausedFor = undefined;
+      break;
+    case 'paused':
+      v.pausedFor = e.seat;
+      break;
+    case 'resumed':
+      v.pausedFor = undefined;
+      // The chat clock stopped while they were away.
+      if (v.floor) v.floor.endsAt += e.pausedMs;
       break;
     default:
       break;

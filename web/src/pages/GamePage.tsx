@@ -7,12 +7,13 @@ import { Feed } from '../components/Feed';
 import { FinalStage } from '../components/FinalStage';
 import { ChatBox, FloorBanner } from '../components/OpenFloor';
 import { Podium } from '../components/Podium';
+import { RoundsReview } from '../components/RoundsReview';
 import { api, ApiError, prefs } from '../lib/api';
 import { buildView, STAGE_LABELS } from '../lib/gameState';
 import { useGame } from '../lib/useGame';
 
 /** Events that don't change anything on screen, so replays skip straight past them. */
-const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast', 'chat_pass']);
+const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast', 'chat_pass', 'paused', 'resumed']);
 
 function replayDelay(e: GameEvent, speed: number): number {
   const text =
@@ -32,6 +33,7 @@ export function GamePage() {
   const [speed, setSpeed] = useState(1);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'stage' | 'rounds'>('stage');
 
   const shown = useMemo(() => (cursor === null ? events : events.slice(0, cursor)), [events, cursor]);
   const view = useMemo(() => buildView(shown), [shown]);
@@ -177,12 +179,33 @@ export function GamePage() {
           {mySeat !== undefined && ' You can see your own back row.'}
         </p>
       )}
+      {live && !replaying && view.pausedFor !== undefined && view.pausedFor !== mySeat && (
+        <p className="notice">Paused: waiting for {view.players[view.pausedFor]?.name ?? 'the player'} to come back.</p>
+      )}
       {live && !game.connected && <p className="notice">Reconnecting to the live game…</p>}
 
       <div className="game__layout">
         <div className="game__stage">
-          {view.floor && <FloorBanner floor={view.floor} skewMs={game.clockSkewMs} live={live && !replaying} />}
-          {(view.stage === 'intro' || view.stage === 'r1' || view.stage === 'r2') && (
+          <div className="tabs" role="tablist" aria-label="Game view">
+            <button type="button" role="tab" className="tabs__tab" aria-selected={tab === 'stage'} onClick={() => setTab('stage')}>
+              {live ? 'Live' : 'Stage'}
+            </button>
+            <button type="button" role="tab" className="tabs__tab" aria-selected={tab === 'rounds'} onClick={() => setTab('rounds')}>
+              Rounds
+            </button>
+          </div>
+          {view.floor && (
+            <FloorBanner floor={view.floor} skewMs={game.clockSkewMs} live={live && !replaying && view.pausedFor === undefined} />
+          )}
+          {tab === 'rounds' && (
+            <RoundsReview
+              events={shown}
+              players={view.players}
+              showHidden={viewer.omniscient && (reveal || !live)}
+              {...(mySeat !== undefined ? { viewerSeat: mySeat } : {})}
+            />
+          )}
+          {tab === 'stage' && (view.stage === 'intro' || view.stage === 'r1' || view.stage === 'r2') && (
             <div className="podiums">
               {view.seats.map((s) => (
                 <Podium
@@ -197,7 +220,7 @@ export function GamePage() {
             </div>
           )}
 
-          {view.stage === 'bow' && view.board && (
+          {tab === 'stage' && view.stage === 'bow' && view.board && (
             <BinOrWinBoard
               board={view.board}
               seats={view.seats}
@@ -213,7 +236,7 @@ export function GamePage() {
             />
           )}
 
-          {(view.stage === 'final' || view.stage === 'over') && view.final && (
+          {tab === 'stage' && (view.stage === 'final' || view.stage === 'over') && view.final && (
             <FinalStage
               final={view.final}
               seats={view.seats}
@@ -224,7 +247,7 @@ export function GamePage() {
             />
           )}
 
-          {view.stage === 'over' && <Summary view={view} />}
+          {tab === 'stage' && view.stage === 'over' && <Summary view={view} />}
           {view.error && <p className="error">The game stopped: {view.error}</p>}
 
           {myAwaiting && (

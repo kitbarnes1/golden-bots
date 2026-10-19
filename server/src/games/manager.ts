@@ -52,7 +52,16 @@ interface RunningGame {
   autoplay: boolean;
   lastStatus?: LiveStatus;
   done: Promise<void>;
+  /** The human's seat, and their pages that are following the game. */
+  humanSeat?: number;
+  playerStreams: Set<Subscriber>;
+  pauseTimer?: NodeJS.Timeout;
 }
+
+/** A reload or a blip shouldn't pause the game: wait this long after the player's page goes. */
+const PAUSE_GRACE_MS = 5_000;
+/** A brand-new game gives the player a little longer to open the page. */
+const FIRST_JOIN_GRACE_MS = 15_000;
 
 /** OpenRouter ids look like "org/model", optionally with a ":variant" such as ":free". */
 const MODEL_ID = /^[\w.-]+\/[\w.:-]+$/;
@@ -145,6 +154,8 @@ export class GameManager {
       autoplay: opts.autoplay ?? false,
       engine: null as unknown as GameEngine,
       done: Promise.resolve(),
+      ...(humanSeat !== undefined ? { humanSeat } : {}),
+      playerStreams: new Set(),
     };
     game.engine = new GameEngine({
       players,
@@ -159,6 +170,7 @@ export class GameManager {
     });
     this.running.set(id, game);
     game.done = this.run(game);
+    if (game.humanSeat !== undefined) this.schedulePause(game, FIRST_JOIN_GRACE_MS);
     this.log.info({ gameId: id, players: players.map((p) => p.model ?? p.name) }, 'Game started');
 
     return { id, ...(playerToken ? { playerToken, seat: humanSeat } : {}) };
@@ -182,9 +194,20 @@ export class GameManager {
       }
       this.db.finishGame(game.id, status, { jackpot: null, stats: game.engine.stats, error: message });
     } finally {
+      clearTimeout(game.pauseTimer);
       this.broadcast(game, { kind: 'end', status });
       this.running.delete(game.id);
     }
+  }
+
+  /** Pause after `ms` unless the player is back by then. */
+  private schedulePause(game: RunningGame, ms: number): void {
+    clearTimeout(game.pauseTimer);
+    game.pauseTimer = setTimeout(() => {
+      if (game.playerStreams.size === 0 && game.humanSeat !== undefined && this.running.has(game.id)) {
+        game.engine.pause(game.humanSeat);
+      }
+    }, ms);
   }
 
   private onEvent(game: RunningGame, event: GameEvent): void {
@@ -199,7 +222,7 @@ export class GameManager {
         sub.send(msg);
       } catch (err) {
         this.log.warn({ err }, 'Dropping stream subscriber');
-        game.subscribers.delete(sub);
+        this.unsubscribe(game, sub);
       }
     }
   }
@@ -225,7 +248,19 @@ export class GameManager {
     }
     if (game.lastStatus) sub.send({ kind: 'status', status: game.lastStatus });
     game.subscribers.add(sub);
-    return () => game.subscribers.delete(sub);
+
+    // The game only goes on while the human player has it open.
+    if (game.humanSeat !== undefined && sub.viewer.seat === game.humanSeat) {
+      game.playerStreams.add(sub);
+      clearTimeout(game.pauseTimer);
+      game.engine.resume();
+    }
+    return () => this.unsubscribe(game, sub);
+  }
+
+  private unsubscribe(game: RunningGame, sub: Subscriber): void {
+    game.subscribers.delete(sub);
+    if (game.playerStreams.delete(sub) && game.playerStreams.size === 0) this.schedulePause(game, PAUSE_GRACE_MS);
   }
 
   submitHumanAction(gameId: string, token: string, requestId: string, response: unknown): SubmitResult {

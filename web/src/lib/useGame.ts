@@ -33,7 +33,9 @@ export function useGame(id: string): GameData {
 
   useEffect(() => {
     let cancelled = false;
+    let ended = false;
     let source: EventSource | null = null;
+    let onVisibility: (() => void) | null = null;
     lastSeq.current = -1;
 
     api
@@ -47,39 +49,59 @@ export function useGame(id: string): GameData {
         lastSeq.current = d.events.at(-1)?.seq ?? -1;
         if (d.status !== 'running') return;
 
-        source = new EventSource(api.streamUrl(id, lastSeq.current));
-        source.onopen = () => setConnected(true);
-        source.addEventListener('game', (msg) => {
-          const event = JSON.parse((msg as MessageEvent<string>).data) as GameEvent;
-          if (event.seq <= lastSeq.current) return;
-          lastSeq.current = event.seq;
-          // Events arrive within a moment of being created, so this approximates clock skew.
-          setClockSkewMs(event.ts - Date.now());
-          setEvents((prev) => [...prev, event]);
-        });
-        source.addEventListener('status', (msg) => {
-          const s = JSON.parse((msg as MessageEvent<string>).data) as LiveStatus;
-          if (s.type === 'status') {
-            setWaitingOn(s.waitingOn);
-            setWaitingAction(s.action);
-          }
-        });
-        source.addEventListener('end', () => {
-          source?.close();
-          setConnected(false);
-          setWaitingOn([]);
-          // Re-fetch: finished games reveal everything, including private thoughts.
-          if (!cancelled) setTimeout(() => setVersion((n) => n + 1), 300);
-        });
-        source.onerror = () => setConnected(false);
+        // A player's game pauses while they're away, so let go of it when the tab is hidden.
+        if (d.viewer.seat !== undefined) {
+          onVisibility = () => {
+            if (document.hidden) {
+              source?.close();
+              source = null;
+            } else if (!source && !ended) {
+              connect();
+            }
+          };
+          document.addEventListener('visibilitychange', onVisibility);
+          if (document.hidden) return;
+        }
+        connect();
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       });
 
+    function connect() {
+      const es = new EventSource(api.streamUrl(id, lastSeq.current));
+      source = es;
+      es.onopen = () => setConnected(true);
+      es.addEventListener('game', (msg) => {
+        const event = JSON.parse((msg as MessageEvent<string>).data) as GameEvent;
+        if (event.seq <= lastSeq.current) return;
+        lastSeq.current = event.seq;
+        // Events arrive within a moment of being created, so this approximates clock skew.
+        setClockSkewMs(event.ts - Date.now());
+        setEvents((prev) => [...prev, event]);
+      });
+      es.addEventListener('status', (msg) => {
+        const s = JSON.parse((msg as MessageEvent<string>).data) as LiveStatus;
+        if (s.type === 'status') {
+          setWaitingOn(s.waitingOn);
+          setWaitingAction(s.action);
+        }
+      });
+      es.addEventListener('end', () => {
+        ended = true;
+        es.close();
+        setConnected(false);
+        setWaitingOn([]);
+        // Re-fetch: finished games reveal everything, including private thoughts.
+        if (!cancelled) setTimeout(() => setVersion((n) => n + 1), 300);
+      });
+      es.onerror = () => setConnected(false);
+    }
+
     return () => {
       cancelled = true;
       source?.close();
+      if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [id, version]);
 

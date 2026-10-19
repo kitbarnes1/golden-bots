@@ -2,7 +2,8 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LlmError, OpenRouterClient, parseModel, splitReasoning } from '../src/llm/openrouter.js';
-import { pickFeatured } from '../src/models.js';
+import { checkModel, type ModelCheck } from '../src/agents/check.js';
+import { canPlay, ModelCatalog, pickFeatured } from '../src/models.js';
 
 type Handler = (req: { url: string; body: Record<string, unknown>; headers: http.IncomingHttpHeaders }) => {
   status?: number;
@@ -55,6 +56,83 @@ describe('OpenRouterClient', () => {
     expect(res).toMatchObject({ content: '{"say":"hi"}', reasoning: 'because', usage: { costUsd: 0.002, promptTokens: 1000 } });
   });
 
+  it('turns native reasoning off, or down to minimal for models that insist on it', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    handler = ({ body }) => {
+      bodies.push(body);
+      const off = (body.reasoning as { enabled?: boolean } | undefined)?.enabled === false;
+      return body.model === 'must/think' && off
+        ? { status: 400, json: { error: { code: 400, message: 'Reasoning is mandatory for this endpoint and cannot be disabled.' } } }
+        : reply('{"say":"hi"}');
+    };
+    const c = client();
+    await c.chat({ model: 'can/stop', messages: [], reasoningEffort: 'none' });
+    await c.chat({ model: 'must/think', messages: [], reasoningEffort: 'none' });
+    await c.chat({ model: 'must/think', messages: [], reasoningEffort: 'none' });
+    expect(bodies.map((b) => b.reasoning)).toEqual([
+      { enabled: false },
+      { enabled: false },
+      { effort: 'minimal' },
+      { effort: 'minimal' }, // remembered: no second 400
+    ]);
+  });
+
+  it('drops a model from the catalogue once OpenRouter refuses to serve it', async () => {
+    const entry = (id: string) => ({ id, name: id, created: 1, context_length: 100_000, pricing: { prompt: '0', completion: '0' } });
+    handler = ({ url }) =>
+      url.endsWith('/models')
+        ? { json: { data: [entry('ok/model:free'), entry('agents-only/model:free')] } }
+        : { status: 403, json: { error: { message: 'only available on agentic harnesses' } } };
+    const c = client();
+    const catalog = new ModelCatalog(c, [], { warn: () => {} });
+    expect((await catalog.list()).map((m) => m.id)).toEqual(['agents-only/model:free', 'ok/model:free']);
+    await c.chat({ model: 'agents-only/model:free', messages: [] }).catch(() => {});
+    expect((await catalog.list()).map((m) => m.id)).toEqual(['ok/model:free']);
+  });
+
+  it('checks a model by asking it a small game question', async () => {
+    const answers: Record<string, () => ReturnType<Handler>> = {
+      'good/model': () => reply('{"thoughts":"bluff","claimed_back_row":[5000,"KILLER"],"say":"Five grand and a Killer."}'),
+      'chatty/model': () => reply('Sure! I would say I have five thousand pounds.'),
+      'refused/model': () => ({ status: 403, json: { error: { message: 'only available on agentic harnesses' } } }),
+    };
+    handler = ({ body }) => answers[body.model as string]!();
+    const c = client({ maxRetries: 0 });
+    expect(await checkModel(c, 'good/model')).toEqual({ ok: true });
+    expect(await checkModel(c, 'chatty/model')).toMatchObject({ ok: false, reason: 'reply was not JSON' });
+    expect(await checkModel(c, 'refused/model')).toMatchObject({ ok: false, transient: false });
+  });
+
+  it('offers only free models that pass their check, and caches the results', async () => {
+    const entry = (id: string) => ({ id, name: id, created: 1, context_length: 100_000, pricing: { prompt: '0', completion: '0' } });
+    handler = () => ({ json: { data: ['good:free', 'broken:free', 'busy:free'].map(entry) } });
+    const checked: string[] = [];
+    const check = async (_c: OpenRouterClient, id: string): Promise<ModelCheck> => {
+      checked.push(id);
+      if (id === 'good:free') return { ok: true };
+      return id === 'busy:free' ? { ok: false, transient: true } : { ok: false };
+    };
+    const catalog = new ModelCatalog(client(), [], { warn: () => {} }, check);
+    expect((await catalog.workingFree()).map((m) => m.id)).toEqual(['good:free']);
+    // A hard failure leaves the picker; a busy model stays, to be checked again later.
+    expect((await catalog.list()).map((m) => m.id)).toEqual(['busy:free', 'good:free']);
+    await catalog.workingFree();
+    expect(checked.sort()).toEqual(['broken:free', 'busy:free', 'good:free']);
+  });
+
+  it("doesn't wait for a slow model to finish its check", async () => {
+    const entry = (id: string) => ({ id, name: id, created: 1, context_length: 100_000, pricing: { prompt: '0', completion: '0' } });
+    handler = () => ({ json: { data: ['quick:free', 'slow:free'].map(entry) } });
+    const check = async (_c: OpenRouterClient, id: string): Promise<ModelCheck> => {
+      if (id === 'slow:free') await new Promise((r) => setTimeout(r, 2000));
+      return { ok: true };
+    };
+    const catalog = new ModelCatalog(client(), [], { warn: () => {} }, check);
+    const started = Date.now();
+    expect((await catalog.workingFree(150)).map((m) => m.id)).toEqual(['quick:free']);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('pulls reasoning out of <think> tags too', () => {
     expect(splitReasoning({ content: '<think>plan {a}</think>\n{"say":"x"}' })).toEqual({ content: '{"say":"x"}', reasoning: 'plan {a}' });
     expect(splitReasoning({ content: '{}', reasoning_content: 'why' })).toEqual({ content: '{}', reasoning: 'why' });
@@ -63,6 +141,7 @@ describe('OpenRouterClient', () => {
   it('treats bad keys, no credits, unknown models and the daily free limit as fatal', async () => {
     const cases: [number, string, RegExp][] = [
       [401, 'No auth credentials found', /rejected the API key/],
+      [403, 'x/y is only available on agentic harnesses', /refused "x\/y"/],
       [402, 'Insufficient credits', /out of credits/],
       [404, 'No endpoints found for x/y', /doesn't have the model/],
       [429, 'Rate limit exceeded: free-models-per-day', /daily free-model limit/],
@@ -147,6 +226,22 @@ describe('pickFeatured', () => {
 
   it('suggests the newest mid-priced chat model from each lab', () => {
     expect(pickFeatured(catalogue, [])).toEqual(['anthropic/claude-new', 'openai/gpt-new', 'google/gemini-flash']);
+  });
+
+  it('only lets chat models take a seat (no music models, classifiers or routers)', () => {
+    const lyria = model('google/lyria-3-pro-preview', 9, 0, 0, {
+      architecture: { input_modalities: ['text', 'image'], output_modalities: ['text', 'audio'] },
+    });
+    const playable = [
+      lyria,
+      model('nvidia/nemotron-3.5-content-safety:free', 9, 0, 0),
+      model('openrouter/free', 9, 0, 0),
+      model('google/gemma-4-31b-it:free', 9, 0, 0, {
+        architecture: { input_modalities: ['image', 'text', 'video'], output_modalities: ['text'] },
+      }),
+    ].filter(canPlay);
+    expect(lyria.textChat).toBe(false);
+    expect(playable.map((m) => m.id)).toEqual(['google/gemma-4-31b-it:free']);
   });
 
   it('uses FEATURED_MODELS when set, dropping ids OpenRouter no longer lists', () => {
