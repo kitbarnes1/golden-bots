@@ -1,84 +1,101 @@
-import { parseModelRef, type ModelOption, type ProviderId } from '@gb/shared';
-import { labelFromId, type ChatClient } from './llm/client.js';
+import type { ModelOption } from '@gb/shared';
+import { labelFromId, type CatalogModel, type OpenRouterClient } from './llm/openrouter.js';
 
-/** How long each provider's list is trusted. Local Ollama models change as you pull them. */
-const TTL_MS: Record<ProviderId, number> = {
-  openrouter: 60 * 60_000,
-  huggingface: 60 * 60_000,
-  ollama: 30_000,
-};
+const CACHE_MS = 60 * 60_000;
 /** After a failed fetch, wait this long before trying again. */
-const FAILED_TTL_MS = 60_000;
+const RETRY_MS = 60_000;
+
+/** Labs whose newest model gets suggested, in the order they're shown. */
+const LABS = ['anthropic', 'openai', 'google', 'x-ai', 'deepseek', 'meta-llama', 'mistralai', 'qwen', 'moonshotai', 'z-ai'];
+/**
+ * Suggested models stay mid-priced (USD per 1M tokens), so a typical game
+ * costs well under a dollar. Anything can still be picked by hand.
+ */
+const MAX_PROMPT_PRICE = 3;
+const MAX_COMPLETION_PRICE = 15;
+const MIN_CONTEXT = 32_000;
+/** Specialised models that wouldn't make good contestants. */
+const NOT_FOR_CHAT = /guard|embed|moderation|audio|image|tts|search|rerank|ocr|:(extended|online|nitro|floor|thinking)$/i;
 
 /**
- * Every model the configured providers offer, merged into one list: featured
- * models first, then local Ollama models, then everything else by name.
+ * Picks the models to suggest: the ids in FEATURED_MODELS if set, otherwise
+ * the newest mid-priced chat model from each major lab. Recomputed from the
+ * live catalogue, so suggestions keep up as new models launch.
  */
+export function pickFeatured(models: CatalogModel[], configured: string[]): string[] {
+  if (configured.length) return configured.filter((id) => models.some((m) => m.id === id));
+  const picks: string[] = [];
+  for (const lab of LABS) {
+    const best = models
+      .filter(
+        (m) =>
+          m.id.startsWith(`${lab}/`) &&
+          !m.free &&
+          m.textChat &&
+          !NOT_FOR_CHAT.test(m.id) &&
+          (m.contextLength ?? 0) >= MIN_CONTEXT &&
+          m.promptPrice !== undefined &&
+          m.promptPrice > 0 &&
+          m.promptPrice <= MAX_PROMPT_PRICE &&
+          (m.completionPrice ?? Infinity) <= MAX_COMPLETION_PRICE,
+      )
+      .sort((a, b) => b.created - a.created)[0];
+    if (best) picks.push(best.id);
+  }
+  return picks;
+}
+
+/** OpenRouter's model list, cached, with the featured models first. */
 export class ModelCatalog {
-  private readonly cache = new Map<ProviderId, { at: number; ttl: number; models: ModelOption[] }>();
-  private readonly inflight = new Map<ProviderId, Promise<ModelOption[]>>();
+  private cache: { at: number; models: ModelOption[] } | null = null;
+  private failedAt = 0;
+  private inflight: Promise<ModelOption[]> | null = null;
 
   constructor(
-    private readonly clients: Partial<Record<ProviderId, ChatClient>>,
-    private readonly featured: string[],
+    private readonly client: OpenRouterClient | null,
+    /** From FEATURED_MODELS; empty = pick automatically. */
+    private readonly configured: string[],
     private readonly log: { warn: (obj: unknown, msg: string) => void },
   ) {}
 
   async list(): Promise<ModelOption[]> {
-    const ids = Object.keys(this.clients) as ProviderId[];
-    const lists = await Promise.all(ids.map((id) => this.listProvider(id)));
-    const featuredRank = new Map(this.featured.map((id, i) => [id, i]));
-    const all = lists.flat().map((m) => ({ ...m, featured: featuredRank.has(m.id) }));
-    // Featured models we couldn't confirm (e.g. the list failed) are still offered.
-    for (const id of this.featured) {
-      const { provider } = parseModelRef(id);
-      if (this.clients[provider] && !all.some((m) => m.id === id) && !this.cache.get(provider)?.models.length) {
-        all.push({ id, name: this.label(id), provider, featured: true, ...(id.endsWith(':free') ? { free: true } : {}) });
-      }
-    }
-    const group = (m: ModelOption) => (m.featured ? 0 : m.provider === 'ollama' ? 1 : 2);
-    return all.sort((a, b) => {
-      if (group(a) !== group(b)) return group(a) - group(b);
-      if (a.featured) return featuredRank.get(a.id)! - featuredRank.get(b.id)!;
-      return a.name.localeCompare(b.name);
+    if (!this.client) return [];
+    if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache.models;
+    if (Date.now() - this.failedAt < RETRY_MS) return this.fallback();
+    this.inflight ??= this.load().finally(() => {
+      this.inflight = null;
     });
+    return this.inflight;
   }
 
-  /** Best label we have for a model reference, without waiting on the network. */
-  label(ref: string): string {
-    const { provider, model } = parseModelRef(ref);
-    return this.cache.get(provider)?.models.find((m) => m.id === ref)?.name ?? labelFromId(model);
+  /** Best label we have for an id, without waiting on the network. */
+  label(id: string): string {
+    return this.cache?.models.find((m) => m.id === id)?.name ?? labelFromId(id);
   }
 
-  /** USD per 1M tokens, for providers that don't report cost per call. */
-  pricing(ref: string): { prompt?: number; completion?: number } | undefined {
-    const { provider } = parseModelRef(ref);
-    const m = this.cache.get(provider)?.models.find((x) => x.id === ref);
-    if (!m || (m.promptPrice === undefined && m.completionPrice === undefined)) return undefined;
-    return { ...(m.promptPrice !== undefined ? { prompt: m.promptPrice } : {}), ...(m.completionPrice !== undefined ? { completion: m.completionPrice } : {}) };
-  }
-
-  private async listProvider(id: ProviderId): Promise<ModelOption[]> {
-    const cached = this.cache.get(id);
-    if (cached && Date.now() - cached.at < cached.ttl) return cached.models;
-    let pending = this.inflight.get(id);
-    if (!pending) {
-      pending = this.fetchProvider(id).finally(() => this.inflight.delete(id));
-      this.inflight.set(id, pending);
-    }
-    return pending;
-  }
-
-  private async fetchProvider(id: ProviderId): Promise<ModelOption[]> {
+  private async load(): Promise<ModelOption[]> {
     try {
-      const models = await this.clients[id]!.listModels();
-      this.cache.set(id, { at: Date.now(), ttl: TTL_MS[id], models });
+      const all = await this.client!.listModels();
+      const featured = pickFeatured(all, this.configured);
+      const rank = new Map(featured.map((id, i) => [id, i]));
+      const models = all
+        .map(({ created: _created, textChat: _textChat, ...m }): ModelOption => ({ ...m, featured: rank.has(m.id) }))
+        .sort((a, b) => {
+          if (a.featured !== b.featured) return a.featured ? -1 : 1;
+          if (a.featured) return rank.get(a.id)! - rank.get(b.id)!;
+          return a.name.localeCompare(b.name);
+        });
+      this.cache = { at: Date.now(), models };
       return models;
     } catch (err) {
-      // Ollama not running is normal (e.g. on the server); don't make noise about it.
-      if (id !== 'ollama') this.log.warn({ err }, `Could not fetch the ${id} model list`);
-      this.cache.set(id, { at: Date.now(), ttl: FAILED_TTL_MS, models: [] });
-      return [];
+      this.log.warn({ err }, 'Could not fetch the OpenRouter model list');
+      this.failedAt = Date.now();
+      return this.fallback();
     }
+  }
+
+  /** Without the live list, offer the configured featured models (if any) as-is. */
+  private fallback(): ModelOption[] {
+    return this.configured.map((id) => ({ id, name: labelFromId(id), featured: true, ...(id.endsWith(':free') ? { free: true } : {}) }));
   }
 }

@@ -1,9 +1,7 @@
 # Golden Balls: AI Edition
 
-The British game show *Golden Balls*, played by AI models. Four contestants (models from
-[OpenRouter](https://openrouter.ai), [Hugging Face](https://huggingface.co/docs/inference-providers)
-or [Ollama](https://ollama.com) on your own computer, or three models and you) get hidden cash and
-Killer balls. They bluff about what they hold, argue it out on a timed open floor, vote each other
+The British game show *Golden Balls*, played by AI models. Four contestants (any models on
+[OpenRouter](https://openrouter.ai), or three models and you) get hidden cash and Killer balls. They bluff about what they hold, argue it out on a timed open floor, vote each other
 off, play Bin or Win, and finish with Split or Steal. You can watch live, read each model's private
 thoughts as it plays, replay old games, and follow a leaderboard of how each model does over time.
 
@@ -34,11 +32,11 @@ Needs Node 22.13 or newer.
 
 ```bash
 npm install
-cp .env.example .env      # add API keys here (optional, see below)
+cp .env.example .env      # add OPENROUTER_API_KEY to use real models (optional)
 npm run dev               # API on :3000, web app on http://localhost:5173
 ```
 
-With no keys and no Ollama, only the mock players are offered. Other commands:
+Without an API key only the mock players are offered. Other commands:
 
 ```bash
 npm test                  # engine + API tests (vitest)
@@ -47,26 +45,26 @@ npm run build && npm start   # production build, served at http://localhost:3000
 docker compose up --build    # or the same thing in Docker
 ```
 
-## Where the models come from
+## Choosing models
 
-You can mix providers in one game. A model id's prefix says where it runs:
+Contestants can be any model on OpenRouter. The picker suggests one model from each major lab:
+by default the newest *mid-priced* one (at most $3 in / $15 out per million tokens), picked from
+OpenRouter's live catalogue, so the suggestions keep up with new releases. 🎲 **Random lineup**
+draws from those, and you can type any other model id. Set `FEATURED_MODELS` to choose the
+suggestions yourself.
 
-| Provider | Model id looks like | Cost | Set up |
-|---|---|---|---|
-| **Ollama** (your computer) | `ollama:llama3.1:8b` | **Free**, unlimited | Install [Ollama](https://ollama.com), run `ollama pull llama3.1:8b`. It's detected automatically. |
-| **OpenRouter** free models | `meta-llama/llama-3.3-70b-instruct:free` | **Free**, rate-limited: 50 requests a day, or 1,000 a day after a one-off $10 credit purchase | `OPENROUTER_API_KEY` |
-| **OpenRouter** | `anthropic/claude-sonnet-4.5` | Pay per token | `OPENROUTER_API_KEY` |
-| **Hugging Face** | `hf:Qwen/Qwen2.5-72B-Instruct` | Pay per token at the provider's price. Free accounts get no monthly credits; PRO includes $2 a month | `HF_TOKEN` (with the "Inference Providers" permission) |
+**Playing for free:** models whose id ends in `:free` cost nothing, and the **Free lineup** button
+fills the table with them. They're rate-limited: 20 requests a minute, and 50 a day, rising to
+1,000 a day once you've bought $10 of credits (a one-off; the credit stays in your account for
+paid models). A game makes roughly 50–90 model calls, so free models need that top-up to manage
+even one game a day.
 
-**Playing for free:** Ollama is the easiest. Small models (7–9B) run fine on a recent laptop and
-cost nothing, but they bluff and argue less convincingly than the big hosted models. They're also
-slower on modest hardware, so pick longer chat times. Running four *different* local models means
-swapping them in and out of memory, so one or two models across the four seats is quicker. The
-**Free lineup** button fills the table with free models. A game makes roughly 50–90 model calls,
-so OpenRouter's 50-a-day free limit won't cover a single game, but 1,000 a day is plenty.
+**Keeping costs in check:** give your OpenRouter key a credit limit in the OpenRouter dashboard,
+and use "Most messages per chat" in the game options to cap the longest part of a game.
 
-If a provider rejects your key, you run out of credits, a model doesn't exist, or Ollama isn't
-running, the game stops with a clear message rather than carrying on with random moves.
+If OpenRouter rejects the key, you run out of credits, a model doesn't exist, or the daily
+free-model limit is used up, the game stops with a clear message rather than carrying on with
+random moves.
 
 ## Configuration
 
@@ -74,23 +72,21 @@ All settings are environment variables (see `.env.example`).
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENROUTER_API_KEY` | – | Enables OpenRouter models. |
-| `HF_TOKEN` | – | Enables Hugging Face models (`hf:` prefix). |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Where Ollama runs (`ollama:` prefix). Set it empty to turn Ollama off. From Docker, use `http://host.docker.internal:11434`. |
+| `OPENROUTER_API_KEY` | – | Enables AI contestants. |
 | `ADMIN_PASSWORD` | – | Required to start, stop or delete games. **Set this in production**, otherwise anyone can spend your credits. Watching and the leaderboard stay public. |
 | `PUBLIC_URL` | `http://localhost:3000` | Sent to OpenRouter as the app's referer. |
 | `MAX_CONCURRENT_GAMES` | `3` | Games that can run at once. |
-| `FEATURED_MODELS` | a mix of current models | Comma-separated model ids shown first in the picker (prefixes allowed). Any model can still be typed in. |
+| `FEATURED_MODELS` | automatic | Comma-separated model ids to suggest first in the picker (also used for random lineups and autoplay). Unset: the newest mid-priced model from each major lab. |
 | `LLM_MAX_TOKENS` / `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | `4096` / `120000` / `3` | Per-call limits. |
 | `HUMAN_TIMEOUT_MS` | 15 min | How long a human gets per move before autopilot takes over. |
 | `AUTOPLAY_INTERVAL_MINUTES` | `0` (off) | Start an all-AI game every N minutes. |
-| `AUTOPLAY_MODELS` | featured list | Pool to draw autoplay lineups from. |
+| `AUTOPLAY_MODELS` | featured models | Pool to draw autoplay lineups from. |
 | `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. |
 
 **What a game costs:** a game is roughly 50–90 model calls, each with a few thousand tokens of
 game transcript. Most of the variation comes from the chats, and the "most messages per chat"
 option caps it. With mid-priced models expect very roughly $0.50–$1.50 per game, a few cents with
-budget models, and nothing with Ollama or free models. The exact cost is tracked per move and shown
+budget models, and nothing with `:free` models. The exact cost is tracked per move and shown
 on each game and on the leaderboard.
 
 ## How the AI contestants play
@@ -142,8 +138,7 @@ The setup in `infra/terraform` creates:
   - Zone → **DNS** → Edit, for `thekitbarnes.com`
 - Your Cloudflare **account id** and the **zone id** of `thekitbarnes.com` (both on the
   domain's Overview page).
-- An OpenRouter API key and/or a Hugging Face token, and a password for starting games. (Ollama
-  isn't available on the server: the small instance has no GPU.)
+- An OpenRouter API key (ideally with a credit limit), and a password for starting games.
 
 ### 2. Create the infrastructure
 

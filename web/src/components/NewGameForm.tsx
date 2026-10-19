@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { DEFAULT_OPTIONS, PROVIDERS, type GameOptions, type ModelOption, type SeatSpec, type ServerInfo } from '@gb/shared';
+import { DEFAULT_OPTIONS, type GameOptions, type ModelOption, type SeatSpec, type ServerInfo } from '@gb/shared';
 import { adminKey, api, ApiError, playerToken } from '../lib/api';
 
 interface SeatDraft {
@@ -11,13 +11,11 @@ interface SeatDraft {
 
 function describe(m: ModelOption | undefined): string {
   if (!m) return '';
-  const where = PROVIDERS[m.provider].label;
-  if (m.provider === 'ollama') return `${where} · free, runs on this computer`;
-  if (m.free) return `${where} · free (rate-limited)`;
+  if (m.free) return 'Free (rate-limited)';
   if (m.promptPrice !== undefined && m.completionPrice !== undefined) {
-    return `${where} · $${m.promptPrice.toFixed(2)} in / $${m.completionPrice.toFixed(2)} out per 1M tokens`;
+    return `$${m.promptPrice.toFixed(2)} in / $${m.completionPrice.toFixed(2)} out per 1M tokens`;
   }
-  return where;
+  return '';
 }
 
 function shuffled<T>(items: T[]): T[] {
@@ -52,12 +50,8 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
 
   const all = models ?? [];
   const featured = useMemo(() => all.filter((m) => m.featured), [all]);
-  const free = useMemo(() => {
-    // Local models first: they're free and unlimited.
-    const local = all.filter((m) => m.provider === 'ollama');
-    return local.length ? local : all.filter((m) => m.free);
-  }, [all]);
-  const canAi = all.length > 0;
+  const free = useMemo(() => all.filter((m) => m.free), [all]);
+  const canAi = info.hasOpenRouterKey;
   const defaultMock = info.mockStrategies[0]?.id ?? 'mock/honest';
 
   useEffect(() => {
@@ -66,7 +60,8 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
       .then((list) => list, () => [] as ModelOption[])
       .then((list) => {
         setModels(list);
-        const picks = lineup(list.filter((m) => m.featured).length >= 2 ? list.filter((m) => m.featured) : list);
+        const featuredList = list.filter((m) => m.featured);
+        const picks = info.hasOpenRouterKey ? lineup(featuredList.length >= 2 ? featuredList : list) : [];
         setSeats(
           Array.from({ length: 4 }, (_, i) =>
             picks[i]
@@ -75,7 +70,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
           ),
         );
       });
-  }, [info.mockStrategies, defaultMock]);
+  }, [info.mockStrategies, info.hasOpenRouterKey, defaultMock]);
 
   useEffect(() => {
     if (!info.requiresAdmin || !adminKey.get()) return;
@@ -134,29 +129,27 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
     }
   };
 
-  const configured = info.providers.filter((p) => p.configured).map((p) => p.label);
-  const ollamaCount = all.filter((m) => m.provider === 'ollama').length;
 
   return (
     <section className="card newgame">
       <h2>Set up a game</h2>
-      {canAi ? (
-        <p className="muted small">
-          Models from {configured.join(', ')}
-          {ollamaCount > 0 && ` (${ollamaCount} running locally)`}. Type to search, or paste any model id.
-        </p>
-      ) : (
+      {!canAi ? (
         <p className="notice">
-          No AI models available yet, so only the free mock players are offered. Add <code>OPENROUTER_API_KEY</code> or{' '}
-          <code>HF_TOKEN</code> to <code>.env</code>, or install <a href="https://ollama.com">Ollama</a> and pull a model (for
-          example <code>ollama pull llama3.1:8b</code>) to play free on this computer.
+          The server has no <code>OPENROUTER_API_KEY</code>, so only the free mock players are available.
+        </p>
+      ) : all.length === 0 ? (
+        <p className="notice">Couldn't load OpenRouter's model list. You can still type a model id.</p>
+      ) : (
+        <p className="muted small">
+          {all.length} models on OpenRouter. Type to search, or paste any model id. Models marked free cost nothing but are
+          rate-limited.
         </p>
       )}
 
       <datalist id="model-list">
         {all.map((m) => (
           <option key={m.id} value={m.id}>
-            {`${m.name} · ${PROVIDERS[m.provider].label}${m.free ? ' · free' : ''}`}
+            {m.free ? `${m.name} · free` : m.name}
           </option>
         ))}
       </datalist>
@@ -191,11 +184,11 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
                   <input
                     list="model-list"
                     value={seat.model}
-                    placeholder="e.g. anthropic/claude-sonnet-4.5, hf:Qwen/…, ollama:llama3.1"
+                    placeholder="Search OpenRouter models, e.g. anthropic/…"
                     onChange={(e) => update(i, { model: e.target.value })}
                     aria-label={`Seat ${i + 1} model`}
                   />
-                  <small>{model ? `${model.name} · ${describe(model)}` : seat.model ? 'Custom model id' : ''}</small>
+                  <small>{model ? [model.name, describe(model)].filter(Boolean).join(' · ') : seat.model ? 'Custom model id' : ''}</small>
                 </div>
               )}
               {seat.kind === 'human' && (
@@ -274,7 +267,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
             </select>
           </label>
           <label className="field">
-            <span>Native reasoning (OpenRouter models that support it)</span>
+            <span>Native reasoning (models that support it)</span>
             <select
               value={options.reasoningEffort}
               onChange={(e) => setOptions((o) => ({ ...o, reasoningEffort: e.target.value as GameOptions['reasoningEffort'] }))}

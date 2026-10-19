@@ -21,7 +21,7 @@ export interface PlayerInfo {
   /** Name shown to everyone (including the other contestants). */
   name: string;
   kind: PlayerKind;
-  /** Model reference (ai, see providers.ts) or mock strategy id (mock). */
+  /** OpenRouter model id (ai) or mock strategy id (mock). */
   model?: string;
   /** Human-friendly model label for the UI, e.g. "Claude Sonnet 4.5". */
   modelLabel?: string;
@@ -36,7 +36,7 @@ export interface GameOptions {
   chatMaxMessages: number;
   /** If true, AI contestants are named after their model; otherwise they get show-style first names. */
   revealModelNames: boolean;
-  /** Ask for native reasoning at this effort (OpenRouter models that support it). */
+  /** Ask OpenRouter for native reasoning at this effort (models that support it). */
   reasoningEffort: 'none' | 'low' | 'medium' | 'high';
   /** Seed for the ball machine, for reproducible games. */
   seed: number;

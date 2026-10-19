@@ -1,6 +1,6 @@
 import type { ActionRequest, PlayerInfo, Usage } from '@gb/shared';
 import { validateResponse } from '../engine/validate.js';
-import { LlmError, type ChatClient, type ChatMessage } from '../llm/client.js';
+import { LlmError, type ChatMessage, type OpenRouterClient } from '../llm/openrouter.js';
 import { systemPrompt, userPrompt } from './prompts.js';
 import { AgentError, type ActMeta, type Agent, type AgentContext, type AgentResult } from './types.js';
 
@@ -11,11 +11,10 @@ export interface LlmAgentOptions {
   repairAttempts: number;
 }
 
-/** A contestant played by a model from OpenRouter, Hugging Face or Ollama. */
+/** A contestant played by a model on OpenRouter. */
 export class LlmAgent implements Agent {
   constructor(
-    private readonly client: ChatClient,
-    /** The provider's own model id (no prefix). */
+    private readonly client: OpenRouterClient,
     private readonly model: string,
     private readonly opts: LlmAgentOptions,
   ) {}

@@ -24,9 +24,9 @@ let manager: GameManager;
 async function setup(overrides: Partial<Config> = {}) {
   const cfg: Config = { ...config, mockDelayMs: 0, adminPassword: '', webDist: '/nonexistent', ...overrides };
   db = new Db(':memory:');
-  const catalog = new ModelCatalog({}, cfg.featuredModels, quiet);
-  manager = new GameManager(db, cfg, {}, catalog, quiet);
-  app = await buildApp({ cfg, db, manager, catalog, clients: {}, logger: false });
+  const catalog = new ModelCatalog(null, cfg.featuredModels, quiet);
+  manager = new GameManager(db, cfg, null, catalog, quiet);
+  app = await buildApp({ cfg, db, manager, catalog, hasOpenRouterKey: false, logger: false });
 }
 
 async function waitFor<T>(fn: () => T | undefined | false, timeoutMs = 5000): Promise<T> {
@@ -54,8 +54,7 @@ describe('API', () => {
 
   it('reports server info', async () => {
     const info: ServerInfo = (await app.inject('/api/info')).json();
-    expect(info.providers.every((p) => !p.configured)).toBe(true);
-    expect(info.providers.map((p) => p.id)).toEqual(['openrouter', 'huggingface', 'ollama']);
+    expect(info.hasOpenRouterKey).toBe(false);
     expect(info.mockStrategies.map((m) => m.id)).toContain('mock/honest');
   });
 

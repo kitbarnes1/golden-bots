@@ -1,10 +1,9 @@
 import type { GameEvent } from './events.js';
-import type { ProviderId } from './providers.js';
 import type { FinalChoice, GameOptions, GameStatus, PlayerInfo, PlayerKind, Stage } from './types.js';
 
 export interface SeatSpec {
   kind: PlayerKind;
-  /** Model reference for 'ai' (see providers.ts), strategy id for 'mock'. */
+  /** OpenRouter model id for 'ai', strategy id for 'mock'. */
   model?: string;
   /** Display name for a human player. */
   name?: string;
@@ -89,12 +88,12 @@ export interface LeaderboardResponse {
 }
 
 export interface ModelOption {
-  /** Model reference, including the provider prefix (see providers.ts). */
+  /** OpenRouter model id, e.g. "anthropic/claude-sonnet-4.5". */
   id: string;
   name: string;
-  provider: ProviderId;
+  /** Suggested in the picker and used for random lineups and autoplay. */
   featured: boolean;
-  /** No charge to use (OpenRouter ":free" models, local Ollama models). */
+  /** No charge to use (OpenRouter ":free" models, which are rate-limited). */
   free?: boolean;
   /** USD per million tokens, when known. */
   promptPrice?: number;
@@ -109,15 +108,8 @@ export interface MockStrategy {
   description: string;
 }
 
-export interface ProviderStatus {
-  id: ProviderId;
-  label: string;
-  /** Has a key/URL set. Ollama is also only usable while it's running. */
-  configured: boolean;
-}
-
 export interface ServerInfo {
-  providers: ProviderStatus[];
+  hasOpenRouterKey: boolean;
   requiresAdmin: boolean;
   maxConcurrentGames: number;
   runningGames: number;

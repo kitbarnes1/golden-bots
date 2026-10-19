@@ -1,10 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   DEFAULT_OPTIONS,
-  PROVIDERS,
   canSee,
-  isValidModelRef,
-  parseModelRef,
   type CreateGameRequest,
   type CreateGameResponse,
   type GameEvent,
@@ -12,7 +9,6 @@ import {
   type GameStatus,
   type LiveStatus,
   type PlayerInfo,
-  type ProviderId,
   type SeatSpec,
   type Viewer,
 } from '@gb/shared';
@@ -24,7 +20,7 @@ import type { Config } from '../config.js';
 import type { Db } from '../db.js';
 import { GameAbortedError, GameEngine, GameFatalError } from '../engine/engine.js';
 import { mulberry32, randomSeed, shuffle } from '../engine/rng.js';
-import type { ChatClient } from '../llm/client.js';
+import type { OpenRouterClient } from '../llm/openrouter.js';
 import type { ModelCatalog } from '../models.js';
 
 export class HttpError extends Error {
@@ -58,11 +54,8 @@ interface RunningGame {
   done: Promise<void>;
 }
 
-const PROVIDER_SETTING: Record<ProviderId, string> = {
-  openrouter: 'set OPENROUTER_API_KEY',
-  huggingface: 'set HF_TOKEN',
-  ollama: 'OLLAMA_BASE_URL is empty',
-};
+/** OpenRouter ids look like "org/model", optionally with a ":variant" such as ":free". */
+const MODEL_ID = /^[\w.-]+\/[\w.:-]+$/;
 
 const ANON_NAMES = ['Ava', 'Ben', 'Cleo', 'Dev', 'Ezra', 'Fran', 'Gus', 'Hana', 'Ivo', 'Jade', 'Kofi', 'Lena'];
 
@@ -78,7 +71,7 @@ export class GameManager {
   constructor(
     private readonly db: Db,
     private readonly cfg: Config,
-    private readonly clients: Partial<Record<ProviderId, ChatClient>>,
+    private readonly client: OpenRouterClient | null,
     private readonly catalog: ModelCatalog,
     private readonly log: Logger,
   ) {}
@@ -124,8 +117,7 @@ export class GameManager {
         return human;
       }
       if (spec.kind === 'mock') return new MockAgent(spec.model!, agentSeed, this.cfg.mockDelayMs);
-      const ref = parseModelRef(spec.model!);
-      return new LlmAgent(this.clients[ref.provider]!, ref.model, {
+      return new LlmAgent(this.client!, spec.model!, {
         reasoningEffort: options.reasoningEffort,
         maxTokens: this.cfg.llmMaxTokens,
         repairAttempts: 1,
@@ -297,13 +289,10 @@ export class GameManager {
         return { kind: 'mock', model: s.model! };
       }
       if (s.kind === 'ai') {
-        if (typeof s.model !== 'string' || !isValidModelRef(s.model)) {
-          throw new HttpError(400, `"${String(s.model)}" is not a valid model id.`);
+        if (typeof s.model !== 'string' || !MODEL_ID.test(s.model)) {
+          throw new HttpError(400, `"${String(s.model)}" is not a valid OpenRouter model id.`);
         }
-        const { provider } = parseModelRef(s.model);
-        if (!this.clients[provider]) {
-          throw new HttpError(400, `${PROVIDERS[provider].label} isn't set up on the server (${PROVIDER_SETTING[provider]}).`);
-        }
+        if (!this.client) throw new HttpError(400, 'OPENROUTER_API_KEY is not configured on the server.');
         return { kind: 'ai', model: s.model };
       }
       throw new HttpError(400, 'Each seat must be ai, human or mock.');

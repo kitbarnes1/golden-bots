@@ -3,18 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import type {
-  CreateGameRequest,
-  GameDetail,
-  HumanActionRequest,
-  ProviderId,
-  ServerInfo,
-} from '@gb/shared';
-import { PROVIDERS, canSee } from '@gb/shared';
+import type { CreateGameRequest, GameDetail, HumanActionRequest, ServerInfo } from '@gb/shared';
+import { canSee } from '@gb/shared';
 import { MOCK_STRATEGIES } from './agents/mock.js';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
-import type { ChatClient } from './llm/client.js';
 import { GameManager, HttpError, type StreamMessage } from './games/manager.js';
 import type { ModelCatalog } from './models.js';
 
@@ -23,7 +16,7 @@ export interface AppDeps {
   db: Db;
   manager: GameManager;
   catalog: ModelCatalog;
-  clients: Partial<Record<ProviderId, ChatClient>>;
+  hasOpenRouterKey: boolean;
   logger?: boolean | object;
 }
 
@@ -68,7 +61,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/healthz', async () => ({ ok: true }));
 
   app.get('/api/info', async (): Promise<ServerInfo> => ({
-    providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label, configured: Boolean(deps.clients[p.id]) })),
+    hasOpenRouterKey: deps.hasOpenRouterKey,
     requiresAdmin: Boolean(cfg.adminPassword),
     maxConcurrentGames: cfg.maxConcurrentGames,
     runningGames: manager.runningCount,

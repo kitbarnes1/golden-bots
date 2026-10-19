@@ -51,17 +51,9 @@ variable "cloudflare_zone_id" {
 }
 
 variable "openrouter_api_key" {
-  description = "OpenRouter API key (https://openrouter.ai/keys). Set this and/or huggingface_token."
+  description = "OpenRouter API key (https://openrouter.ai/keys). Consider giving it a credit limit."
   type        = string
   sensitive   = true
-  default     = ""
-}
-
-variable "huggingface_token" {
-  description = "Hugging Face token with Inference Providers permission (optional)."
-  type        = string
-  sensitive   = true
-  default     = ""
 }
 
 variable "admin_password" {

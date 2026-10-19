@@ -12,9 +12,11 @@ export function startAutoplay(cfg: Config, manager: GameManager, catalog: ModelC
   const tick = async () => {
     if (manager.hasRunningAutoplay() || manager.runningCount >= cfg.maxConcurrentGames) return;
     try {
-      const available = new Set((await catalog.list()).map((m) => m.id));
-      const configured = cfg.autoplayModels.length ? cfg.autoplayModels : cfg.featuredModels;
-      const pool = configured.filter((id) => available.has(id));
+      const models = await catalog.list();
+      const available = new Set(models.map((m) => m.id));
+      const pool = cfg.autoplayModels.length
+        ? cfg.autoplayModels.filter((id) => available.has(id))
+        : models.filter((m) => m.featured).map((m) => m.id);
       if (pool.length === 0) {
         log.warn({}, 'Autoplay: no available models in the pool');
         return;

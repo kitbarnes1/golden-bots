@@ -75,8 +75,7 @@ export function HomePage() {
           </li>
         </ol>
         <p className="muted">
-          Contestants are AI models from OpenRouter or Hugging Face, or open models running on your own computer with
-          Ollama. Each is told the rules and asked to win as much money as it can. Before every vote, and again before
+          Contestants are AI models on OpenRouter. Each is told the rules and asked to win as much money as it can. Before every vote, and again before
           Split or Steal, they get a timed open floor to question, accuse, bargain and persuade, and you can join in if
           you're playing. Their private reasoning is recorded so you can see who was lying, who was scheming, and who
           meant it when they said "split".
