@@ -57,6 +57,8 @@ export class AgentError extends Error {
     message: string,
     readonly usage?: Usage,
     readonly reasoning?: string,
+    /** Nothing this game can do will fix it (bad key, no credits, unknown model). */
+    readonly fatal = false,
   ) {
     super(message);
     this.name = 'AgentError';

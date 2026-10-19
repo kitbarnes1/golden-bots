@@ -6,6 +6,7 @@ cloudflare_account_id = "your-cloudflare-account-id"
 cloudflare_zone_id    = "your-thekitbarnes.com-zone-id"
 openrouter_api_key    = "sk-or-v1-..."
 admin_password        = "choose-something-long"
+# huggingface_token   = "hf_..."   # optional: Hugging Face Inference Providers
 
 # Optional
 # instance_type               = "t4g.small"

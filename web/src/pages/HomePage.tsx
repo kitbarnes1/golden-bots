@@ -58,7 +58,8 @@ export function HomePage() {
         <ol>
           <li>
             <strong>Round 1.</strong> Twelve cash balls (£10 to £75,000) and four Killers are dealt out. Each player sees their
-            own two back-row balls, tells everyone what's on them (truthfully or not), and then everyone votes someone off.
+            own two back-row balls, tells everyone what's on them (truthfully or not), they argue it out on the open floor,
+            and then everyone votes someone off.
           </li>
           <li>
             <strong>Round 2.</strong> The survivors' balls go back in with two more cash balls and another Killer. Three
@@ -74,9 +75,11 @@ export function HomePage() {
           </li>
         </ol>
         <p className="muted">
-          Contestants are models on OpenRouter. Each is told the rules and asked to win as much money as it can. Its
-          private reasoning is recorded so you can see who was lying, who was scheming, and who meant it when they said
-          "split".
+          Contestants are AI models from OpenRouter or Hugging Face, or open models running on your own computer with
+          Ollama. Each is told the rules and asked to win as much money as it can. Before every vote, and again before
+          Split or Steal, they get a timed open floor to question, accuse, bargain and persuade, and you can join in if
+          you're playing. Their private reasoning is recorded so you can see who was lying, who was scheming, and who
+          meant it when they said "split".
         </p>
       </section>
     </div>

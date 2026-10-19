@@ -7,12 +7,14 @@ import type {
   CreateGameRequest,
   GameDetail,
   HumanActionRequest,
+  ProviderId,
   ServerInfo,
 } from '@gb/shared';
-import { canSee } from '@gb/shared';
+import { PROVIDERS, canSee } from '@gb/shared';
 import { MOCK_STRATEGIES } from './agents/mock.js';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
+import type { ChatClient } from './llm/client.js';
 import { GameManager, HttpError, type StreamMessage } from './games/manager.js';
 import type { ModelCatalog } from './models.js';
 
@@ -21,7 +23,7 @@ export interface AppDeps {
   db: Db;
   manager: GameManager;
   catalog: ModelCatalog;
-  hasOpenRouterKey: boolean;
+  clients: Partial<Record<ProviderId, ChatClient>>;
   logger?: boolean | object;
 }
 
@@ -66,7 +68,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/healthz', async () => ({ ok: true }));
 
   app.get('/api/info', async (): Promise<ServerInfo> => ({
-    hasOpenRouterKey: deps.hasOpenRouterKey,
+    providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label, configured: Boolean(deps.clients[p.id]) })),
     requiresAdmin: Boolean(cfg.adminPassword),
     maxConcurrentGames: cfg.maxConcurrentGames,
     runningGames: manager.runningCount,
@@ -169,6 +171,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const body = (req.body ?? {}) as Partial<HumanActionRequest>;
     if (typeof body.requestId !== 'string') throw new HttpError(400, 'requestId is required.');
     const result = manager.submitHumanAction(id, token, body.requestId, body.response);
+    if (!result.ok) return reply.status(result.status).send({ error: result.error });
+    return { ok: true };
+  });
+
+  app.post('/api/games/:id/chat', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const token = tokenOf(req);
+    if (!token) throw new HttpError(401, 'Missing player token.');
+    const body = (req.body ?? {}) as { text?: unknown; to?: unknown };
+    const result = manager.postChat(id, token, body.text, body.to);
+    if (!result.ok) return reply.status(result.status).send({ error: result.error });
+    return { ok: true };
+  });
+
+  app.post('/api/games/:id/chat/done', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const token = tokenOf(req);
+    if (!token) throw new HttpError(401, 'Missing player token.');
+    const result = manager.doneTalking(id, token);
     if (!result.ok) return reply.status(result.status).send({ error: result.error });
     return { ok: true };
   });

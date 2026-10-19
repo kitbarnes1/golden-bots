@@ -7,7 +7,7 @@ export type Validation = { ok: true; value: ActionResponse } | { ok: false; erro
 
 const fail = (error: string): Validation => ({ ok: false, error });
 
-function cleanSay(value: unknown): string {
+export function cleanSay(value: unknown): string {
   if (typeof value !== 'string') return '';
   const text = value.replace(/\s+/g, ' ').trim();
   return text.length > MAX_SAY_LENGTH ? `${text.slice(0, MAX_SAY_LENGTH - 1)}…` : text;
@@ -57,6 +57,12 @@ export function validateResponse(request: ActionRequest, raw: unknown): Validati
       const say = cleanSay(r.say);
       if (!say) return fail('say must be a non-empty string.');
       return { ok: true, value: { kind: 'speak', say } };
+    }
+    case 'chat': {
+      // An empty message (or an explicit pass) means "nothing to add right now".
+      const say = r.pass === true ? '' : cleanSay(r.say);
+      const to = typeof r.to === 'number' && request.participants.includes(r.to) ? r.to : null;
+      return { ok: true, value: { kind: 'chat', say: say || null, to: say ? to : null } };
     }
     case 'vote':
     case 'tie_decide': {

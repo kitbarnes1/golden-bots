@@ -79,6 +79,17 @@ export const api = {
       headers: { 'x-player-token': playerToken.get(id) ?? '' },
       body: JSON.stringify({ requestId, response }),
     }),
+  chat: (id: string, text: string, to: number | null) =>
+    request<{ ok: true }>(`/api/games/${id}/chat`, {
+      method: 'POST',
+      headers: { 'x-player-token': playerToken.get(id) ?? '' },
+      body: JSON.stringify({ text, to }),
+    }),
+  chatDone: (id: string) =>
+    request<{ ok: true }>(`/api/games/${id}/chat/done`, {
+      method: 'POST',
+      headers: { 'x-player-token': playerToken.get(id) ?? '' },
+    }),
   abort: (id: string) => request<{ ok: true }>(`/api/games/${id}/abort`, { method: 'POST' }),
   remove: (id: string) => request<{ ok: true }>(`/api/games/${id}`, { method: 'DELETE' }),
   leaderboard: (opts: { includeUnranked: boolean; includeHumans: boolean }) =>

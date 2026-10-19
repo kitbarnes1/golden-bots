@@ -47,8 +47,20 @@ export interface FinalView {
   payouts?: Payout[];
 }
 
+export interface FloorView {
+  stage: string;
+  participants: number[];
+  durationMs: number;
+  /** Server clock. */
+  endsAt: number;
+  messages: number;
+  maxMessages: number;
+}
+
 export interface GameView {
   players: PlayerInfo[];
+  /** An open-floor chat in progress. */
+  floor?: FloorView;
   options?: GameOptions;
   seats: SeatView[];
   stage: ViewStage;
@@ -179,6 +191,22 @@ function apply(v: GameView, e: GameEvent): void {
       }
       for (const c of e.choices) v.seats[c.seat]!.finalChoice = c.choice;
       for (const p of e.payouts) v.seats[p.seat]!.winnings = p.amount;
+      break;
+    case 'chat_started':
+      v.floor = {
+        stage: e.stage,
+        participants: e.participants,
+        durationMs: e.durationMs,
+        endsAt: e.endsAt,
+        messages: 0,
+        maxMessages: e.maxMessages,
+      };
+      break;
+    case 'speech':
+      if (v.floor) v.floor.messages++;
+      break;
+    case 'chat_ended':
+      v.floor = undefined;
       break;
     case 'game_over':
       v.stage = 'over';

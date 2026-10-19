@@ -43,7 +43,7 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
   { key: 'splitRate', label: 'Split rate', title: 'Share of finals where they chose SPLIT', numeric: true },
   { key: 'honesty', label: 'Honesty', title: 'Share of back-row claims that were the truth', numeric: true },
   { key: 'invalidResponses', label: 'Fumbles', title: 'Unusable or failed responses (the host chose for them)', numeric: true },
-  { key: 'costUsd', label: 'API cost', title: 'Total OpenRouter spend for this contestant', numeric: true },
+  { key: 'costUsd', label: 'API cost', title: 'Total API spend for this contestant (local Ollama models are free)', numeric: true },
 ];
 
 export function LeaderboardPage() {

@@ -21,8 +21,9 @@ function list(name: string, fallback: string[]): string[] {
 }
 
 /**
- * Suggested contestants shown first in the model picker. Any OpenRouter model
- * id works; ids that OpenRouter doesn't list are hidden automatically.
+ * Suggested contestants shown first in the model picker (model references, so
+ * "hf:..." and "ollama:..." work too). Any model can still be typed in; ids a
+ * provider doesn't list are hidden automatically.
  */
 const DEFAULT_FEATURED = [
   'anthropic/claude-sonnet-4.5',
@@ -50,6 +51,11 @@ export const config = {
 
   openRouterApiKey: process.env.OPENROUTER_API_KEY ?? '',
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
+  /** Hugging Face access token (Inference Providers permission). */
+  hfToken: process.env.HF_TOKEN ?? '',
+  hfBaseUrl: process.env.HF_BASE_URL ?? 'https://router.huggingface.co/v1',
+  /** Ollama on this machine. Set to an empty string to turn Ollama off. */
+  ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
   llmMaxTokens: int('LLM_MAX_TOKENS', 4096),
   llmTimeoutMs: int('LLM_TIMEOUT_MS', 120_000),
   llmMaxRetries: int('LLM_MAX_RETRIES', 3),

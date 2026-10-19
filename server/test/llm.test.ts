@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_OPTIONS, type ActionRequest, type PlayerInfo } from '@gb/shared';
 import { extractJson, interpret, LlmAgent, resolvePlayer } from '../src/agents/llm.js';
 import { parseClaimValue, validateResponse } from '../src/engine/validate.js';
-import type { ChatRequest, ChatResult, OpenRouterClient } from '../src/llm/openrouter.js';
+import type { ChatClient, ChatRequest, ChatResult } from '../src/llm/client.js';
 import type { AgentContext } from '../src/agents/types.js';
 import { systemPrompt, userPrompt } from '../src/agents/prompts.js';
 
@@ -75,7 +75,7 @@ describe('response parsing', () => {
 });
 
 describe('LlmAgent', () => {
-  function fakeClient(replies: string[]): { client: OpenRouterClient; calls: ChatRequest[] } {
+  function fakeClient(replies: string[]): { client: ChatClient; calls: ChatRequest[] } {
     const calls: ChatRequest[] = [];
     const client = {
       async chat(req: ChatRequest): Promise<ChatResult> {
@@ -83,7 +83,7 @@ describe('LlmAgent', () => {
         const content = replies.shift() ?? '';
         return { content, reasoning: 'native reasoning', usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.001, latencyMs: 3 } };
       },
-    } as unknown as OpenRouterClient;
+    } as unknown as ChatClient;
     return { client, calls };
   }
 

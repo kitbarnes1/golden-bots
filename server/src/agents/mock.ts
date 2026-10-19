@@ -67,6 +67,8 @@ export class MockAgent implements Agent {
         return this.claim(ctx);
       case 'speak':
         return this.speak(request, ctx);
+      case 'chat':
+        return this.chat(request, ctx);
       case 'vote':
       case 'tie_decide':
         return this.vote(request.kind, request.candidates, ctx);
@@ -116,17 +118,36 @@ export class MockAgent implements Agent {
   }
 
   private speak(request: Extract<ActionRequest, { kind: 'speak' }>, ctx: AgentContext): AgentResult {
-    const lines =
-      request.context === 'final'
-        ? this.style === 'bluffer'
-          ? FINAL_LINES_BLUFFER
-          : FINAL_LINES_HONEST
-        : request.context === 'tie_plea'
-          ? PLEA_LINES
-          : this.discussionLines(ctx);
+    const lines = request.context === 'tie_plea' ? PLEA_LINES : this.discussionLines(ctx);
+    return { response: { say: pickOne(lines, this.rng) } };
+  }
+
+  private chat(request: Extract<ActionRequest, { kind: 'chat' }>, ctx: AgentContext): AgentResult {
+    const final = ctx.stage === 'final';
+    const finalLines = this.style === 'bluffer' ? FINAL_LINES_BLUFFER : FINAL_LINES_HONEST;
+    if (request.replyTo !== undefined) {
+      const who = ctx.players[request.replyTo]?.name ?? 'you';
+      return {
+        response: { say: pickOne(final ? finalLines : replyLines(who), this.rng), to: request.replyTo },
+        thoughts: `${who} spoke to me directly, so I'd better answer.`,
+      };
+    }
+    // Say a couple of things, then mostly let others talk.
+    const opened = ctx.events.findLastIndex((e) => e.type === 'chat_started');
+    const said = ctx.events.slice(opened + 1).filter((e) => e.type === 'speech' && e.seat === ctx.seat).length;
+    if (said >= 2 && this.rng() < 0.6) return { response: { pass: true }, thoughts: "I've said enough for now." };
+
+    const others = request.participants.filter((s) => s !== ctx.seat);
+    if (final) {
+      return {
+        response: { say: pickOne(finalLines, this.rng), to: others[0] ?? null },
+        thoughts: `The jackpot is ${formatMoney(ctx.jackpot ?? 0)}.`,
+      };
+    }
+    const suspect = this.weakest(others, ctx);
     return {
-      response: { say: pickOne(lines, this.rng) },
-      thoughts: request.context === 'final' ? `Jackpot is ${formatMoney(ctx.jackpot ?? 0)}.` : undefined,
+      response: { say: pickOne(this.discussionLines(ctx), this.rng), to: this.rng() < 0.5 ? suspect : null },
+      thoughts: `${ctx.players[suspect]?.name} looks like the weak link.`,
     };
   }
 
@@ -164,6 +185,12 @@ const PICK_LINES = [
   "This one's been looking at me.",
   "No Killers please, no Killers.",
   "Fortune favours the brave.",
+];
+
+const replyLines = (who: string) => [
+  `${who}, fair question. My back row is exactly what I said it was.`,
+  `Come on ${who}, I've been straight with you all game.`,
+  `${who}, I could ask you the same thing.`,
 ];
 
 const PLEA_LINES = [

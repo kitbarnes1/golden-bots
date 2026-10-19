@@ -1,7 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   DEFAULT_OPTIONS,
+  PROVIDERS,
   canSee,
+  isValidModelRef,
+  parseModelRef,
   type CreateGameRequest,
   type CreateGameResponse,
   type GameEvent,
@@ -9,6 +12,7 @@ import {
   type GameStatus,
   type LiveStatus,
   type PlayerInfo,
+  type ProviderId,
   type SeatSpec,
   type Viewer,
 } from '@gb/shared';
@@ -18,9 +22,9 @@ import { MOCK_STRATEGIES, MockAgent } from '../agents/mock.js';
 import type { Agent } from '../agents/types.js';
 import type { Config } from '../config.js';
 import type { Db } from '../db.js';
-import { GameAbortedError, GameEngine } from '../engine/engine.js';
+import { GameAbortedError, GameEngine, GameFatalError } from '../engine/engine.js';
 import { mulberry32, randomSeed, shuffle } from '../engine/rng.js';
-import type { OpenRouterClient } from '../llm/openrouter.js';
+import type { ChatClient } from '../llm/client.js';
 import type { ModelCatalog } from '../models.js';
 
 export class HttpError extends Error {
@@ -54,8 +58,13 @@ interface RunningGame {
   done: Promise<void>;
 }
 
+const PROVIDER_SETTING: Record<ProviderId, string> = {
+  openrouter: 'set OPENROUTER_API_KEY',
+  huggingface: 'set HF_TOKEN',
+  ollama: 'OLLAMA_BASE_URL is empty',
+};
+
 const ANON_NAMES = ['Ava', 'Ben', 'Cleo', 'Dev', 'Ezra', 'Fran', 'Gus', 'Hana', 'Ivo', 'Jade', 'Kofi', 'Lena'];
-const MODEL_ID = /^[\w.-]+\/[\w.:-]+$/;
 
 export interface Logger {
   info: (obj: unknown, msg?: string) => void;
@@ -69,7 +78,7 @@ export class GameManager {
   constructor(
     private readonly db: Db,
     private readonly cfg: Config,
-    private readonly client: OpenRouterClient | null,
+    private readonly clients: Partial<Record<ProviderId, ChatClient>>,
     private readonly catalog: ModelCatalog,
     private readonly log: Logger,
   ) {}
@@ -115,7 +124,8 @@ export class GameManager {
         return human;
       }
       if (spec.kind === 'mock') return new MockAgent(spec.model!, agentSeed, this.cfg.mockDelayMs);
-      return new LlmAgent(this.client!, spec.model!, {
+      const ref = parseModelRef(spec.model!);
+      return new LlmAgent(this.clients[ref.provider]!, ref.model, {
         reasoningEffort: options.reasoningEffort,
         maxTokens: this.cfg.llmMaxTokens,
         repairAttempts: 1,
@@ -171,7 +181,8 @@ export class GameManager {
       const aborted = err instanceof GameAbortedError || game.abort.signal.aborted;
       status = aborted ? 'abandoned' : 'error';
       const message = aborted ? 'The game was stopped.' : err instanceof Error ? err.message : String(err);
-      if (!aborted) this.log.error({ err, gameId: game.id }, 'Game crashed');
+      if (err instanceof GameFatalError) this.log.warn({ gameId: game.id, reason: err.message }, 'Game stopped');
+      else if (!aborted) this.log.error({ err, gameId: game.id }, 'Game crashed');
       try {
         game.engine.fail(message);
       } catch (persistErr) {
@@ -234,6 +245,33 @@ export class GameManager {
     return human.submit(requestId, response);
   }
 
+  /** A human contestant says something in the open floor. */
+  postChat(gameId: string, token: string, text: unknown, to: unknown): SubmitResult {
+    const found = this.humanSeat(gameId, token);
+    if (!found.ok) return found;
+    const res = found.game.engine.postChat(found.seat, typeof text === 'string' ? text : '', typeof to === 'number' ? to : null);
+    return res.ok ? res : { ok: false, status: 409, error: res.error };
+  }
+
+  /** A human contestant has nothing more to say in this chat. */
+  doneTalking(gameId: string, token: string): SubmitResult {
+    const found = this.humanSeat(gameId, token);
+    if (!found.ok) return found;
+    const res = found.game.engine.doneTalking(found.seat);
+    return res.ok ? res : { ok: false, status: 409, error: res.error };
+  }
+
+  private humanSeat(
+    gameId: string,
+    token: string,
+  ): { ok: true; game: RunningGame; seat: number } | { ok: false; status: 400 | 409; error: string } {
+    const game = this.running.get(gameId);
+    if (!game) return { ok: false, status: 409, error: 'This game is not running.' };
+    const seat = this.db.seatForToken(gameId, token);
+    if (seat === undefined || !game.humans.has(seat)) return { ok: false, status: 400, error: 'You are not playing in this game.' };
+    return { ok: true, game, seat };
+  }
+
   abort(gameId: string): boolean {
     const game = this.running.get(gameId);
     if (!game) return false;
@@ -259,10 +297,13 @@ export class GameManager {
         return { kind: 'mock', model: s.model! };
       }
       if (s.kind === 'ai') {
-        if (typeof s.model !== 'string' || !MODEL_ID.test(s.model)) {
-          throw new HttpError(400, `"${String(s.model)}" is not a valid OpenRouter model id.`);
+        if (typeof s.model !== 'string' || !isValidModelRef(s.model)) {
+          throw new HttpError(400, `"${String(s.model)}" is not a valid model id.`);
         }
-        if (!this.client) throw new HttpError(400, 'OPENROUTER_API_KEY is not configured on the server.');
+        const { provider } = parseModelRef(s.model);
+        if (!this.clients[provider]) {
+          throw new HttpError(400, `${PROVIDERS[provider].label} isn't set up on the server (${PROVIDER_SETTING[provider]}).`);
+        }
         return { kind: 'ai', model: s.model };
       }
       throw new HttpError(400, 'Each seat must be ai, human or mock.');
@@ -281,8 +322,9 @@ export class GameManager {
       ? (o.reasoningEffort as GameOptions['reasoningEffort'])
       : DEFAULT_OPTIONS.reasoningEffort;
     return {
-      discussionPasses: clamp(o.discussionPasses, 0, 3, DEFAULT_OPTIONS.discussionPasses),
-      finalDiscussionPasses: clamp(o.finalDiscussionPasses, 1, 4, DEFAULT_OPTIONS.finalDiscussionPasses),
+      chatSeconds: clamp(o.chatSeconds, 0, 300, DEFAULT_OPTIONS.chatSeconds),
+      finalChatSeconds: clamp(o.finalChatSeconds, 0, 300, DEFAULT_OPTIONS.finalChatSeconds),
+      chatMaxMessages: clamp(o.chatMaxMessages, 2, 40, DEFAULT_OPTIONS.chatMaxMessages),
       revealModelNames: typeof o.revealModelNames === 'boolean' ? o.revealModelNames : DEFAULT_OPTIONS.revealModelNames,
       reasoningEffort: effort,
       seed: clamp(o.seed, 0, 2 ** 31 - 1, randomSeed()),

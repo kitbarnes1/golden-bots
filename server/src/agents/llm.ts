@@ -1,6 +1,6 @@
 import type { ActionRequest, PlayerInfo, Usage } from '@gb/shared';
 import { validateResponse } from '../engine/validate.js';
-import type { ChatMessage, OpenRouterClient } from '../llm/openrouter.js';
+import { LlmError, type ChatClient, type ChatMessage } from '../llm/client.js';
 import { systemPrompt, userPrompt } from './prompts.js';
 import { AgentError, type ActMeta, type Agent, type AgentContext, type AgentResult } from './types.js';
 
@@ -11,10 +11,11 @@ export interface LlmAgentOptions {
   repairAttempts: number;
 }
 
-/** A contestant played by a model on OpenRouter. */
+/** A contestant played by a model from OpenRouter, Hugging Face or Ollama. */
 export class LlmAgent implements Agent {
   constructor(
-    private readonly client: OpenRouterClient,
+    private readonly client: ChatClient,
+    /** The provider's own model id (no prefix). */
     private readonly model: string,
     private readonly opts: LlmAgentOptions,
   ) {}
@@ -39,7 +40,8 @@ export class LlmAgent implements Agent {
           signal: meta.signal,
         });
       } catch (err) {
-        throw new AgentError(err instanceof Error ? err.message : String(err), usage, reasoning);
+        const fatal = err instanceof LlmError && err.fatal;
+        throw new AgentError(err instanceof Error ? err.message : String(err), usage, reasoning, fatal);
       }
       usage = addUsage(usage, result.usage);
       reasoning = joinText(reasoning, result.reasoning);
@@ -48,7 +50,7 @@ export class LlmAgent implements Agent {
       if (!parsed) {
         lastError = 'Reply was not a JSON object.';
       } else {
-        const response = interpret(request, parsed, ctx.players);
+        const response = interpret(request, parsed, ctx.players, ctx.seat);
         const valid = validateResponse(request, response);
         if (valid.ok) {
           return {
@@ -77,12 +79,17 @@ export function interpret(
   request: ActionRequest,
   json: Record<string, unknown>,
   players: PlayerInfo[],
+  self = -1,
 ): Record<string, unknown> {
   switch (request.kind) {
     case 'claim':
       return { claim: json.claimed_back_row ?? json.claim, say: json.say };
     case 'speak':
       return { say: json.say };
+    case 'chat': {
+      const others = request.participants.filter((s) => s !== self);
+      return { say: json.say, pass: json.pass === true, to: resolvePlayer(json.to, others, players) ?? null };
+    }
     case 'vote':
       return { target: resolvePlayer(json.vote_for ?? json.vote ?? json.target, request.candidates, players) };
     case 'tie_decide':

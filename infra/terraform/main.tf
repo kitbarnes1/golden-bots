@@ -92,12 +92,15 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
 # The instance renders these into env files on every deploy (see deploy.sh).
 
 resource "aws_ssm_parameter" "app" {
+  # Parameters can't be empty, so optional keys are only added when set. (Whether a key is
+  # set isn't secret; nonsensitive() lets for_each use that.)
   for_each = merge(
     {
-      OPENROUTER_API_KEY = var.openrouter_api_key
-      ADMIN_PASSWORD     = var.admin_password
-      PUBLIC_URL         = "https://${local.hostname}"
+      ADMIN_PASSWORD = var.admin_password
+      PUBLIC_URL     = "https://${local.hostname}"
     },
+    nonsensitive(var.openrouter_api_key != "") ? { OPENROUTER_API_KEY = var.openrouter_api_key } : {},
+    nonsensitive(var.huggingface_token != "") ? { HF_TOKEN = var.huggingface_token } : {},
     var.extra_app_env,
   )
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import type { GameOptions, ModelOption, SeatSpec, ServerInfo } from '@gb/shared';
+import { DEFAULT_OPTIONS, PROVIDERS, type GameOptions, type ModelOption, type SeatSpec, type ServerInfo } from '@gb/shared';
 import { adminKey, api, ApiError, playerToken } from '../lib/api';
 
 interface SeatDraft {
@@ -9,10 +9,16 @@ interface SeatDraft {
   name: string;
 }
 
-const price = (m?: ModelOption) =>
-  m?.promptPrice !== undefined && m.completionPrice !== undefined
-    ? `$${m.promptPrice.toFixed(2)} in / $${m.completionPrice.toFixed(2)} out per 1M tokens`
-    : '';
+function describe(m: ModelOption | undefined): string {
+  if (!m) return '';
+  const where = PROVIDERS[m.provider].label;
+  if (m.provider === 'ollama') return `${where} · free, runs on this computer`;
+  if (m.free) return `${where} · free (rate-limited)`;
+  if (m.promptPrice !== undefined && m.completionPrice !== undefined) {
+    return `${where} · $${m.promptPrice.toFixed(2)} in / $${m.completionPrice.toFixed(2)} out per 1M tokens`;
+  }
+  return where;
+}
 
 function shuffled<T>(items: T[]): T[] {
   const a = [...items];
@@ -23,42 +29,53 @@ function shuffled<T>(items: T[]): T[] {
   return a;
 }
 
+/** Four picks, repeating only if there are fewer than four to choose from. */
+function lineup(pool: ModelOption[]): string[] {
+  if (pool.length === 0) return [];
+  const picks = shuffled(pool).slice(0, 4).map((m) => m.id);
+  while (picks.length < 4) picks.push(picks[picks.length % pool.length]!);
+  return picks;
+}
+
+const CHAT_LENGTHS = [0, 30, 60, 90, 120, 180];
+const formatLength = (s: number) => (s === 0 ? 'No chat' : s < 120 ? `${s} seconds` : `${s / 60} minutes`);
+
 export function NewGameForm({ info }: { info: ServerInfo }) {
   const navigate = useNavigate();
-  const [models, setModels] = useState<ModelOption[]>([]);
-  const featured = useMemo(() => models.filter((m) => m.featured), [models]);
-  const canAi = info.hasOpenRouterKey;
-  const defaultMock = info.mockStrategies[0]?.id ?? 'mock/honest';
-
-  const [seats, setSeats] = useState<SeatDraft[]>(() =>
-    Array.from({ length: 4 }, (_, i) => ({
-      kind: canAi ? 'ai' : 'mock',
-      model: canAi ? '' : (info.mockStrategies[i % info.mockStrategies.length]?.id ?? defaultMock),
-      name: '',
-    })),
-  );
-  const [options, setOptions] = useState<Omit<GameOptions, 'seed'>>({
-    discussionPasses: 1,
-    finalDiscussionPasses: 2,
-    revealModelNames: true,
-    reasoningEffort: 'none',
-  });
+  const [models, setModels] = useState<ModelOption[] | null>(null);
+  const [seats, setSeats] = useState<SeatDraft[] | null>(null);
+  const [options, setOptions] = useState<Omit<GameOptions, 'seed'>>({ ...DEFAULT_OPTIONS });
   const [password, setPassword] = useState('');
   const [unlocked, setUnlocked] = useState(!info.requiresAdmin);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const all = models ?? [];
+  const featured = useMemo(() => all.filter((m) => m.featured), [all]);
+  const free = useMemo(() => {
+    // Local models first: they're free and unlimited.
+    const local = all.filter((m) => m.provider === 'ollama');
+    return local.length ? local : all.filter((m) => m.free);
+  }, [all]);
+  const canAi = all.length > 0;
+  const defaultMock = info.mockStrategies[0]?.id ?? 'mock/honest';
+
   useEffect(() => {
     api
       .models()
+      .then((list) => list, () => [] as ModelOption[])
       .then((list) => {
         setModels(list);
-        // Fill empty AI seats with a varied featured lineup.
-        const picks = shuffled(list.filter((m) => m.featured));
-        setSeats((prev) => prev.map((s, i) => (s.kind === 'ai' && !s.model ? { ...s, model: picks[i % Math.max(1, picks.length)]?.id ?? '' } : s)));
-      })
-      .catch(() => setModels([]));
-  }, []);
+        const picks = lineup(list.filter((m) => m.featured).length >= 2 ? list.filter((m) => m.featured) : list);
+        setSeats(
+          Array.from({ length: 4 }, (_, i) =>
+            picks[i]
+              ? { kind: 'ai', model: picks[i]!, name: '' }
+              : { kind: 'mock', model: info.mockStrategies[i % info.mockStrategies.length]?.id ?? defaultMock, name: '' },
+          ),
+        );
+      });
+  }, [info.mockStrategies, defaultMock]);
 
   useEffect(() => {
     if (!info.requiresAdmin || !adminKey.get()) return;
@@ -68,14 +85,23 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
     );
   }, [info.requiresAdmin]);
 
-  const update = (i: number, patch: Partial<SeatDraft>) =>
-    setSeats((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)));
+  if (!seats) {
+    return (
+      <section className="card newgame">
+        <h2>Set up a game</h2>
+        <p className="muted">Finding available models…</p>
+      </section>
+    );
+  }
 
+  const update = (i: number, patch: Partial<SeatDraft>) =>
+    setSeats((prev) => prev!.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const hasHuman = seats.some((s) => s.kind === 'human');
 
-  const randomLineup = () => {
-    const picks = shuffled(featured.length >= 4 ? featured : models).slice(0, 4);
-    setSeats((prev) => prev.map((s, i) => (s.kind === 'ai' ? { ...s, model: picks[i]?.id ?? s.model } : s)));
+  const applyLineup = (pool: ModelOption[]) => {
+    const picks = lineup(pool);
+    let n = 0;
+    setSeats((prev) => prev!.map((s) => (s.kind === 'human' ? s : { kind: 'ai', model: picks[n++]!, name: '' })));
   };
 
   const unlock = async () => {
@@ -108,26 +134,36 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
     }
   };
 
+  const configured = info.providers.filter((p) => p.configured).map((p) => p.label);
+  const ollamaCount = all.filter((m) => m.provider === 'ollama').length;
+
   return (
     <section className="card newgame">
       <h2>Set up a game</h2>
-      {!canAi && (
+      {canAi ? (
+        <p className="muted small">
+          Models from {configured.join(', ')}
+          {ollamaCount > 0 && ` (${ollamaCount} running locally)`}. Type to search, or paste any model id.
+        </p>
+      ) : (
         <p className="notice">
-          The server has no <code>OPENROUTER_API_KEY</code>, so only the offline mock players are available.
+          No AI models available yet, so only the free mock players are offered. Add <code>OPENROUTER_API_KEY</code> or{' '}
+          <code>HF_TOKEN</code> to <code>.env</code>, or install <a href="https://ollama.com">Ollama</a> and pull a model (for
+          example <code>ollama pull llama3.1:8b</code>) to play free on this computer.
         </p>
       )}
 
       <datalist id="model-list">
-        {models.map((m) => (
+        {all.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.name}
+            {`${m.name} · ${PROVIDERS[m.provider].label}${m.free ? ' · free' : ''}`}
           </option>
         ))}
       </datalist>
 
       <div className="seats">
         {seats.map((seat, i) => {
-          const model = models.find((m) => m.id === seat.model);
+          const model = all.find((m) => m.id === seat.model);
           return (
             <div className="seat" key={i}>
               <span className="seat__num">{i + 1}</span>
@@ -137,7 +173,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
                   const kind = e.target.value as SeatDraft['kind'];
                   update(i, {
                     kind,
-                    model: kind === 'mock' ? defaultMock : kind === 'ai' ? (featured[i]?.id ?? '') : '',
+                    model: kind === 'mock' ? defaultMock : kind === 'ai' ? ((featured[i] ?? all[i] ?? all[0])?.id ?? '') : '',
                   });
                 }}
                 aria-label={`Seat ${i + 1} player type`}
@@ -155,11 +191,11 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
                   <input
                     list="model-list"
                     value={seat.model}
-                    placeholder="Search OpenRouter models, e.g. anthropic/…"
+                    placeholder="e.g. anthropic/claude-sonnet-4.5, hf:Qwen/…, ollama:llama3.1"
                     onChange={(e) => update(i, { model: e.target.value })}
                     aria-label={`Seat ${i + 1} model`}
                   />
-                  <small>{model ? `${model.name} · ${price(model)}` : seat.model ? 'Custom model id' : ''}</small>
+                  <small>{model ? `${model.name} · ${describe(model)}` : seat.model ? 'Custom model id' : ''}</small>
                 </div>
               )}
               {seat.kind === 'human' && (
@@ -185,45 +221,60 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
         })}
       </div>
 
-      <div className="newgame__row">
-        {canAi && models.length > 0 && (
-          <button type="button" className="btn btn--ghost btn--small" onClick={randomLineup}>
+      {canAi && (
+        <div className="newgame__row">
+          <button type="button" className="btn btn--ghost btn--small" onClick={() => applyLineup(featured.length >= 2 ? featured : all)}>
             🎲 Random lineup
           </button>
-        )}
-      </div>
+          {free.length > 0 && (
+            <button type="button" className="btn btn--ghost btn--small" onClick={() => applyLineup(free)}>
+              Free lineup
+            </button>
+          )}
+        </div>
+      )}
 
       <details className="newgame__options">
         <summary>Game options</summary>
         <div className="options-grid">
           <label className="field">
-            <span>Discussion before each vote</span>
-            <select
-              value={options.discussionPasses}
-              onChange={(e) => setOptions((o) => ({ ...o, discussionPasses: Number(e.target.value) }))}
-            >
-              {[0, 1, 2, 3].map((n) => (
-                <option key={n} value={n}>
-                  {n === 0 ? 'None' : `${n} round${n > 1 ? 's' : ''}`}
+            <span>Open-floor chat before each vote</span>
+            <select value={options.chatSeconds} onChange={(e) => setOptions((o) => ({ ...o, chatSeconds: Number(e.target.value) }))}>
+              {CHAT_LENGTHS.map((s) => (
+                <option key={s} value={s}>
+                  {formatLength(s)}
                 </option>
               ))}
             </select>
           </label>
           <label className="field">
-            <span>Split or Steal conversation</span>
+            <span>Chat before Split or Steal</span>
             <select
-              value={options.finalDiscussionPasses}
-              onChange={(e) => setOptions((o) => ({ ...o, finalDiscussionPasses: Number(e.target.value) }))}
+              value={options.finalChatSeconds}
+              onChange={(e) => setOptions((o) => ({ ...o, finalChatSeconds: Number(e.target.value) }))}
             >
-              {[1, 2, 3, 4].map((n) => (
-                <option key={n} value={n}>
-                  {n} exchange{n > 1 ? 's' : ''}
+              {CHAT_LENGTHS.map((s) => (
+                <option key={s} value={s}>
+                  {formatLength(s)}
                 </option>
               ))}
             </select>
           </label>
           <label className="field">
-            <span>Native reasoning (supported models)</span>
+            <span>Most messages per chat (caps cost)</span>
+            <select
+              value={options.chatMaxMessages}
+              onChange={(e) => setOptions((o) => ({ ...o, chatMaxMessages: Number(e.target.value) }))}
+            >
+              {[6, 8, 12, 16, 24].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Native reasoning (OpenRouter models that support it)</span>
             <select
               value={options.reasoningEffort}
               onChange={(e) => setOptions((o) => ({ ...o, reasoningEffort: e.target.value as GameOptions['reasoningEffort'] }))}
@@ -260,7 +311,11 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
           <button className="btn btn--gold">Unlock</button>
         </form>
       ) : (
-        <button className="btn btn--gold btn--big" disabled={busy || seats.some((s) => s.kind !== 'human' && !s.model.trim())} onClick={() => void start()}>
+        <button
+          className="btn btn--gold btn--big"
+          disabled={busy || seats.some((s) => s.kind !== 'human' && !s.model.trim())}
+          onClick={() => void start()}
+        >
           {busy ? 'Starting…' : hasHuman ? 'Take your seat' : 'Start the show'}
         </button>
       )}

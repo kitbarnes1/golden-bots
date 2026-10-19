@@ -5,13 +5,14 @@ import { ActionPanel } from '../components/ActionPanel';
 import { BinOrWinBoard } from '../components/BinOrWinBoard';
 import { Feed } from '../components/Feed';
 import { FinalStage } from '../components/FinalStage';
+import { ChatBox, FloorBanner } from '../components/OpenFloor';
 import { Podium } from '../components/Podium';
 import { api, ApiError, prefs } from '../lib/api';
 import { buildView, STAGE_LABELS } from '../lib/gameState';
 import { useGame } from '../lib/useGame';
 
 /** Events that don't change anything on screen, so replays skip straight past them. */
-const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast']);
+const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast', 'chat_pass']);
 
 function replayDelay(e: GameEvent, speed: number): number {
   const text =
@@ -180,6 +181,7 @@ export function GamePage() {
 
       <div className="game__layout">
         <div className="game__stage">
+          {view.floor && <FloorBanner floor={view.floor} skewMs={game.clockSkewMs} live={live && !replaying} />}
           {(view.stage === 'intro' || view.stage === 'r1' || view.stage === 'r2') && (
             <div className="podiums">
               {view.seats.map((s) => (
@@ -236,6 +238,10 @@ export function GamePage() {
             />
           )}
 
+          {live && !replaying && view.floor && mySeat !== undefined && view.floor.participants.includes(mySeat) && (
+            <ChatBox gameId={id} floor={view.floor} mySeat={mySeat} players={view.players} skewMs={game.clockSkewMs} />
+          )}
+
           <div className="game__meta">
             {viewer.omniscient && detail.players.some((p) => p.kind === 'ai') && (
               <span>
@@ -254,6 +260,7 @@ export function GamePage() {
             showThoughts={showThoughts}
             reveal={reveal && viewer.omniscient}
             {...(mySeat !== undefined ? { viewerSeat: mySeat } : {})}
+            {...(live && !replaying ? { activity: { seats: game.waitingOn, action: game.waitingAction } } : {})}
           />
         </aside>
       </div>

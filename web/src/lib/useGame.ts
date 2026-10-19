@@ -7,6 +7,10 @@ export interface GameData {
   events: GameEvent[];
   status: GameStatus | null;
   waitingOn: number[];
+  /** What the players in waitingOn are doing (e.g. 'chat' = typing). */
+  waitingAction: string | null;
+  /** Server clock minus ours, from the latest live event (for countdowns). */
+  clockSkewMs: number;
   error: string | null;
   connected: boolean;
   reload: () => void;
@@ -18,6 +22,8 @@ export function useGame(id: string): GameData {
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [status, setStatus] = useState<GameStatus | null>(null);
   const [waitingOn, setWaitingOn] = useState<number[]>([]);
+  const [waitingAction, setWaitingAction] = useState<string | null>(null);
+  const [clockSkewMs, setClockSkewMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [version, setVersion] = useState(0);
@@ -47,11 +53,16 @@ export function useGame(id: string): GameData {
           const event = JSON.parse((msg as MessageEvent<string>).data) as GameEvent;
           if (event.seq <= lastSeq.current) return;
           lastSeq.current = event.seq;
+          // Events arrive within a moment of being created, so this approximates clock skew.
+          setClockSkewMs(event.ts - Date.now());
           setEvents((prev) => [...prev, event]);
         });
         source.addEventListener('status', (msg) => {
           const s = JSON.parse((msg as MessageEvent<string>).data) as LiveStatus;
-          if (s.type === 'status') setWaitingOn(s.waitingOn);
+          if (s.type === 'status') {
+            setWaitingOn(s.waitingOn);
+            setWaitingAction(s.action);
+          }
         });
         source.addEventListener('end', () => {
           source?.close();
@@ -72,5 +83,5 @@ export function useGame(id: string): GameData {
     };
   }, [id, version]);
 
-  return { detail, events, status, waitingOn, error, connected, reload };
+  return { detail, events, status, waitingOn, waitingAction, clockSkewMs, error, connected, reload };
 }

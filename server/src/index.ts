@@ -1,23 +1,13 @@
+import type { ProviderId } from '@gb/shared';
 import { buildApp } from './app.js';
 import { startAutoplay } from './autoplay.js';
 import { config } from './config.js';
 import { Db } from './db.js';
 import { GameManager } from './games/manager.js';
-import { OpenRouterClient } from './llm/openrouter.js';
+import { ChatClient } from './llm/client.js';
 import { ModelCatalog } from './models.js';
 
 const db = new Db(config.databasePath);
-
-const client = config.openRouterApiKey
-  ? new OpenRouterClient({
-      apiKey: config.openRouterApiKey,
-      baseUrl: config.openRouterBaseUrl,
-      appUrl: config.publicUrl,
-      appName: 'Golden Balls AI',
-      timeoutMs: config.llmTimeoutMs,
-      maxRetries: config.llmMaxRetries,
-    })
-  : null;
 
 // Fastify's logger isn't available until the app exists; the manager and
 // catalog log through it once it is.
@@ -27,13 +17,47 @@ const logProxy = {
   error: (obj: unknown, msg?: string) => app.log.error(obj, msg),
 };
 
-const catalog = new ModelCatalog(client, config.featuredModels, logProxy);
-const manager = new GameManager(db, config, client, catalog, logProxy);
-const app = await buildApp({ cfg: config, db, manager, catalog, hasOpenRouterKey: Boolean(client) });
+const common = { timeoutMs: config.llmTimeoutMs, maxRetries: config.llmMaxRetries };
+const pricing = (ref: string) => catalog.pricing(ref);
+const clients: Partial<Record<ProviderId, ChatClient>> = {};
+if (config.openRouterApiKey) {
+  clients.openrouter = new ChatClient({
+    provider: 'openrouter',
+    baseUrl: config.openRouterBaseUrl,
+    apiKey: config.openRouterApiKey,
+    // Optional attribution headers recognised by OpenRouter.
+    extraHeaders: { 'HTTP-Referer': config.publicUrl, 'X-Title': 'Golden Balls AI' },
+    ...common,
+  });
+}
+if (config.hfToken) {
+  clients.huggingface = new ChatClient({
+    provider: 'huggingface',
+    baseUrl: config.hfBaseUrl,
+    apiKey: config.hfToken,
+    pricing,
+    ...common,
+  });
+}
+if (config.ollamaBaseUrl) {
+  clients.ollama = new ChatClient({
+    provider: 'ollama',
+    baseUrl: `${config.ollamaBaseUrl.replace(/\/+$/, '')}/v1`,
+    ...common,
+    // Local models can be slow, and there's nothing to rate-limit us.
+    timeoutMs: Math.max(config.llmTimeoutMs, 300_000),
+  });
+}
+
+const catalog = new ModelCatalog(clients, config.featuredModels, logProxy);
+const manager = new GameManager(db, config, clients, catalog, logProxy);
+const app = await buildApp({ cfg: config, db, manager, catalog, clients });
 
 const abandoned = db.abandonRunningGames();
 if (abandoned) app.log.warn(`Marked ${abandoned} unfinished game(s) from a previous run as abandoned.`);
-if (!client) app.log.warn('OPENROUTER_API_KEY is not set: only mock players are available.');
+if (!clients.openrouter && !clients.huggingface) {
+  app.log.warn('No OPENROUTER_API_KEY or HF_TOKEN: only Ollama (if running) and mock players are available.');
+}
 if (!config.adminPassword) app.log.warn('ADMIN_PASSWORD is not set: anyone can start games.');
 
 const stopAutoplay = startAutoplay(config, manager, catalog, logProxy);

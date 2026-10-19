@@ -9,18 +9,27 @@ interface Props {
   showThoughts: boolean;
   reveal: boolean;
   viewerSeat?: number;
+  /** Who's working on a move right now (live games only). */
+  activity?: { seats: number[]; action: string | null };
 }
+
+const CHAT_END_TEXT = {
+  time: "Time's up. The floor is closed.",
+  quiet: "Everyone's said their piece. The floor is closed.",
+  limit: 'That was the last message. The floor is closed.',
+} as const;
 
 const ACTION_LABELS: Record<string, string> = {
   claim: 'announcing their back row',
   speak: 'speaking',
+  chat: 'chatting',
   vote: 'voting',
   tie_decide: 'breaking the tie',
   pick: 'picking a ball',
   final_choice: 'choosing split or steal',
 };
 
-export function Feed({ events, players, showThoughts, reveal, viewerSeat }: Props) {
+export function Feed({ events, players, showThoughts, reveal, viewerSeat, activity }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -28,7 +37,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat }: Prop
   useEffect(() => {
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [events.length, showThoughts]);
+  }, [events.length, showThoughts, activity?.seats.length]);
 
   const backRows = new Map<string, BallT[]>();
   for (const e of events) if (e.type === 'back_row') backRows.set(`${e.stage}:${e.seat}`, e.back);
@@ -103,7 +112,37 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat }: Prop
         items.push(
           <div key={key} className="feed__line" style={color(e.seat)}>
             {who(e.seat)}
+            {e.to !== undefined && (
+              <>
+                <span className="feed__arrow" aria-label="to">
+                  {' '}
+                  →{' '}
+                </span>
+                {who(e.to)}
+              </>
+            )}
             <p className="feed__say">“{e.say}”</p>
+          </div>,
+        );
+        break;
+      case 'chat_started':
+        items.push(
+          <div key={key} className="feed__floor">
+            {e.stage === 'final' ? 'Split or Steal talks' : 'Open floor'} · {Math.round(e.durationMs / 1000)} seconds
+          </div>,
+        );
+        break;
+      case 'chat_pass':
+        items.push(
+          <div key={key} className="feed__muted feed__small">
+            {name(e.seat)} has nothing to add.
+          </div>,
+        );
+        break;
+      case 'chat_ended':
+        items.push(
+          <div key={key} className="feed__muted feed__small">
+            {CHAT_END_TEXT[e.reason]}
           </div>,
         );
         break;
@@ -240,6 +279,17 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat }: Prop
       aria-live="polite"
     >
       {items}
+      {activity && activity.seats.length > 0 && (
+        <div className="feed__typing" aria-live="off">
+          {activity.seats.map((s) => name(s)).join(', ')} {activity.seats.length === 1 ? 'is' : 'are'}{' '}
+          {activity.action === 'chat' ? 'typing' : 'thinking'}
+          <span className="feed__dots" aria-hidden>
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
+      )}
     </div>
   );
 }

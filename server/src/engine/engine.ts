@@ -9,6 +9,7 @@ import {
   type ActionRequest,
   type ActionResponse,
   type Ball,
+  type ChatEndReason,
   type ClaimValue,
   type FinalChoice,
   type FinalOutcome,
@@ -25,7 +26,7 @@ import {
 import { AgentError, type Agent, type AgentContext } from '../agents/types.js';
 import { Host } from './host.js';
 import { mulberry32, pickOne, shuffle, type Rng } from './rng.js';
-import { validateResponse } from './validate.js';
+import { cleanSay, validateResponse } from './validate.js';
 
 export type PlayerOutcome = 'shared' | 'stole' | 'stolen_from' | 'mutual_steal';
 
@@ -77,7 +78,42 @@ export class GameAbortedError extends Error {
   }
 }
 
+/** A contestant can't play at all (e.g. bad API key), so the game can't continue. */
+export class GameFatalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GameFatalError';
+  }
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** How long the floor waits for a human who has just been asked something. */
+const HUMAN_REPLY_WAIT_MS = 20_000;
+/** Minimum gap between a human's chat messages. */
+const HUMAN_MIN_GAP_MS = 1000;
+
+interface Floor {
+  stage: Stage;
+  participants: number[];
+  endsAt: number;
+  max: number;
+  messages: number;
+  lastSpeaker: number | null;
+  /** Who owes a reply to whom: addressee -> asker, oldest first. */
+  owed: Map<number, number>;
+  /** Speaker of every message so far, in order. */
+  history: number[];
+  /** seat -> the message number they last spoke at. */
+  lastAt: Map<number, number>;
+  counts: Map<number, number>;
+  /** AIs who said they've nothing to add (cleared whenever someone speaks). */
+  passed: Set<number>;
+  humansDone: Set<number>;
+  lastHumanPost: Map<number, number>;
+  /** Wakes the floor loop when it's waiting on a human. */
+  wake: (() => void) | null;
+}
 
 export class GameEngine {
   readonly events: GameEvent[] = [];
@@ -93,6 +129,8 @@ export class GameEngine {
   /** Who started Bin or Win; they also speak first in the final. */
   private firstSeat?: number;
   private readonly waiting = new Map<number, ActionRequest['kind']>();
+  /** The conversation in progress, if any. */
+  private floor?: Floor;
 
   constructor(private readonly deps: EngineDeps) {
     if (deps.players.length !== 4 || deps.agents.length !== 4) {
@@ -211,20 +249,10 @@ export class GameEngine {
       this.push({ type: 'claim', stage, seat, claim: res.claim, say: res.say });
     }
 
-    // Open discussion.
-    if (this.deps.options.discussionPasses > 0) this.say(this.host.openDiscussion());
-    for (let pass = 0; pass < this.deps.options.discussionPasses; pass++) {
-      for (const seat of this.rotate(active, pass + 1)) {
-        await this.speak(seat, {
-          kind: 'speak',
-          stage,
-          context: 'discussion',
-          prompt:
-            pass === 0
-              ? 'Open discussion before the vote. React to the claims you have heard.'
-              : 'The discussion continues. This is your last chance to speak before the vote.',
-        });
-      }
+    // Open floor: a timed free-for-all conversation before the vote.
+    if (this.deps.options.chatSeconds > 0) {
+      this.say(this.host.openDiscussion(this.deps.options.chatSeconds));
+      await this.openFloor(stage, this.rotate(active, stage === 'r1' ? 1 : 2), this.deps.options.chatSeconds);
     }
 
     // Secret vote.
@@ -394,22 +422,8 @@ export class GameEngine {
     const order: [number, number] = this.firstSeat === b ? [b, a] : [a, b];
 
     this.push({ type: 'final_started', jackpot, seats: order });
-    this.say(this.host.splitOrSteal(jackpot));
-
-    for (let pass = 0; pass < this.deps.options.finalDiscussionPasses; pass++) {
-      for (const seat of order) {
-        const other = this.seats[order[0] === seat ? order[1] : order[0]]!.info.name;
-        await this.speak(seat, {
-          kind: 'speak',
-          stage: 'final',
-          context: 'final',
-          prompt:
-            pass === this.deps.options.finalDiscussionPasses - 1
-              ? `Last words to ${other} before you both choose.`
-              : `Talk to ${other} about the ${formatMoney(jackpot)} jackpot before you both choose SPLIT or STEAL.`,
-        });
-      }
-    }
+    this.say(this.host.splitOrSteal(jackpot, this.deps.options.finalChatSeconds));
+    await this.openFloor('final', order, this.deps.options.finalChatSeconds);
 
     this.say(this.host.chooseNow());
     const choices = await Promise.all(
@@ -462,6 +476,181 @@ export class GameEngine {
     this.push({ type: 'final_reveal', choices, outcome, payouts });
     this.say(this.host.reveal(outcome, jackpot, [this.seats[order[0]]!.info.name, this.seats[order[1]]!.info.name], stealer));
     return payouts;
+  }
+
+  // ------------------------------------------------------------ open floor
+
+  /**
+   * A timed conversation. One AI speaks at a time, so everyone hears everything:
+   * whoever was just spoken to replies first, otherwise whoever has been quiet
+   * longest. Humans can post whenever they like. Ends when time runs out, the
+   * message cap is reached, or everyone has nothing more to say.
+   */
+  private async openFloor(stage: Stage, participants: number[], seconds: number): Promise<void> {
+    const durationMs = Math.round(seconds * 1000);
+    if (durationMs <= 0 || participants.length < 2) return;
+    const floor: Floor = {
+      stage,
+      participants,
+      endsAt: Date.now() + durationMs,
+      max: Math.max(1, this.deps.options.chatMaxMessages),
+      messages: 0,
+      lastSpeaker: null,
+      owed: new Map(),
+      history: [],
+      lastAt: new Map(),
+      counts: new Map(),
+      passed: new Set(),
+      humansDone: new Set(),
+      lastHumanPost: new Map(),
+      wake: null,
+    };
+    this.floor = floor;
+    this.push({ type: 'chat_started', stage, participants, durationMs, endsAt: floor.endsAt, maxMessages: floor.max });
+
+    let reason: ChatEndReason = 'time';
+    try {
+      for (;;) {
+        this.throwIfAborted();
+        const left = floor.endsAt - Date.now();
+        if (left <= 0) break;
+        // Once the AIs have used up the message cap, a human still gets their say
+        // (and answers to their questions) until time runs out.
+        const capped = floor.messages >= floor.max;
+        const humansTalking = participants.some((s) => this.isHuman(s) && !floor.humansDone.has(s));
+        if (capped && !humansTalking) {
+          reason = 'limit';
+          break;
+        }
+        // A human was asked something: give them a moment to answer.
+        const askedHuman = [...floor.owed.keys()].find((s) => this.isHuman(s) && !floor.humansDone.has(s));
+        if (askedHuman !== undefined) {
+          const answered = await this.waitForHuman(floor, Math.min(left, HUMAN_REPLY_WAIT_MS));
+          if (!answered) floor.owed.delete(askedHuman);
+          continue;
+        }
+        const next = this.nextChatSpeaker(floor, capped);
+        if (next === undefined) {
+          if (!humansTalking) {
+            reason = capped ? 'limit' : 'quiet';
+            break;
+          }
+          await this.waitForHuman(floor, left);
+          continue;
+        }
+        const askedBy = floor.owed.get(next);
+        const res = await this.ask(next, {
+          kind: 'chat',
+          stage,
+          secondsLeft: Math.max(1, Math.ceil(left / 1000)),
+          participants,
+          ...(askedBy !== undefined ? { replyTo: askedBy } : {}),
+        });
+        if (res.kind === 'chat' && res.say) {
+          this.recordChat(floor, next, res.say, res.to);
+        } else {
+          floor.passed.add(next);
+          floor.owed.delete(next);
+          this.push({ type: 'chat_pass', stage, seat: next });
+        }
+      }
+    } finally {
+      floor.wake?.();
+      this.floor = undefined;
+    }
+    this.push({ type: 'chat_ended', stage, reason });
+  }
+
+  /** Who talks next. */
+  private nextChatSpeaker(floor: Floor, capped: boolean): number | undefined {
+    const canSpeak = (s: number) => !this.isHuman(s) && s !== floor.lastSpeaker && !floor.passed.has(s);
+    const quietest = (seats: number[]) =>
+      [...seats].sort((a, b) => (floor.lastAt.get(a) ?? -1) - (floor.lastAt.get(b) ?? -1))[0];
+
+    // 1. A human's question always gets an answer (even past the message cap).
+    for (const [addressee, asker] of floor.owed) {
+      if (canSpeak(addressee) && this.isHuman(asker)) return addressee;
+    }
+    if (capped) return undefined;
+
+    // Nobody gets more than their fair share of the conversation.
+    const fairShare = Math.ceil(floor.max / floor.participants.length) + 1;
+    const eligible = floor.participants.filter((s) => canSpeak(s) && (floor.counts.get(s) ?? 0) < fairShare);
+
+    // 2. After a three-message back-and-forth between two players, someone else cuts in.
+    const [a, b, c] = floor.history.slice(-3);
+    if (a !== undefined && a === c && a !== b) {
+      const outsiders = eligible.filter((s) => s !== a && s !== b);
+      if (outsiders.length) return quietest(outsiders);
+    }
+    // 3. Replies owed between AIs, oldest question first.
+    for (const addressee of floor.owed.keys()) {
+      if (eligible.includes(addressee)) return addressee;
+    }
+    // 4. Whoever has been quiet longest.
+    return quietest(eligible);
+  }
+
+  private recordChat(floor: Floor, seat: number, say: string, to: number | null): void {
+    const target = to !== null && to !== seat && floor.participants.includes(to) ? to : null;
+    floor.messages++;
+    floor.history.push(seat);
+    floor.lastSpeaker = seat;
+    floor.owed.delete(seat);
+    if (target !== null) floor.owed.set(target, seat);
+    floor.lastAt.set(seat, floor.messages);
+    floor.counts.set(seat, (floor.counts.get(seat) ?? 0) + 1);
+    // Something new was said, so everyone may want to respond again.
+    floor.passed.clear();
+    this.push({ type: 'speech', stage: floor.stage, seat, say, ...(target !== null ? { to: target } : {}) });
+    floor.wake?.();
+  }
+
+  /** Resolves true as soon as a human posts or says they're done; false on timeout. */
+  private waitForHuman(floor: Floor, ms: number): Promise<boolean> {
+    if (ms <= 0) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const finish = (value: boolean) => {
+        clearTimeout(timer);
+        this.signal.removeEventListener('abort', onAbort);
+        floor.wake = null;
+        resolve(value);
+      };
+      const onAbort = () => finish(false);
+      const timer = setTimeout(() => finish(false), ms);
+      this.signal.addEventListener('abort', onAbort);
+      floor.wake = () => finish(true);
+    });
+  }
+
+  /** A human contestant posts into the open floor (any time while it's open). */
+  postChat(seat: number, text: string, to: number | null): { ok: true } | { ok: false; error: string } {
+    const floor = this.floor;
+    if (!floor || Date.now() >= floor.endsAt) return { ok: false, error: 'The floor is closed.' };
+    if (!floor.participants.includes(seat) || !this.isHuman(seat)) {
+      return { ok: false, error: "You're not part of this conversation." };
+    }
+    const say = cleanSay(text);
+    if (!say) return { ok: false, error: 'Say something first.' };
+    const last = floor.lastHumanPost.get(seat) ?? 0;
+    if (Date.now() - last < HUMAN_MIN_GAP_MS) return { ok: false, error: 'Slow down a little.' };
+    floor.lastHumanPost.set(seat, Date.now());
+    floor.humansDone.delete(seat);
+    this.recordChat(floor, seat, say, to);
+    return { ok: true };
+  }
+
+  /** A human has nothing more to say; the floor can close once the AIs are done too. */
+  doneTalking(seat: number): { ok: true } | { ok: false; error: string } {
+    const floor = this.floor;
+    if (!floor || !floor.participants.includes(seat)) return { ok: false, error: 'The floor is closed.' };
+    floor.humansDone.add(seat);
+    floor.wake?.();
+    return { ok: true };
+  }
+
+  private isHuman(seat: number): boolean {
+    return this.seats[seat]?.agent.interactive === true;
   }
 
   // ----------------------------------------------------------- agent calls
@@ -517,6 +706,7 @@ export class GameEngine {
       if (this.signal.aborted) throw new GameAbortedError();
       if (err instanceof AgentError) {
         this.recordUsage(s, err.usage);
+        if (err.fatal) throw new GameFatalError(`${s.info.name}: ${err.message}`);
       }
       s.stats.invalidResponses++;
       const message = err instanceof Error ? err.message : String(err);
@@ -547,6 +737,8 @@ export class GameEngine {
       }
       case 'speak':
         return { kind: 'speak', say: '' };
+      case 'chat':
+        return { kind: 'chat', say: null, to: null };
       case 'vote':
       case 'tie_decide':
         return { kind: request.kind, target: pickOne(request.candidates, this.rng) };

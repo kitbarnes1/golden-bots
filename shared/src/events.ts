@@ -32,7 +32,19 @@ export type GameEventBody =
   /** Private: a player peeks at their own back row. */
   | { type: 'back_row'; stage: 'r1' | 'r2'; seat: number; back: Ball[] }
   | { type: 'claim'; stage: 'r1' | 'r2'; seat: number; claim: ClaimValue[]; say: string }
-  | { type: 'speech'; stage: Stage; seat: number; say: string }
+  /** to = the seat being spoken to directly, if any. */
+  | { type: 'speech'; stage: Stage; seat: number; say: string; to?: number }
+  | {
+      type: 'chat_started';
+      stage: Stage;
+      participants: number[];
+      durationMs: number;
+      /** Server clock, ms. */
+      endsAt: number;
+      maxMessages: number;
+    }
+  | { type: 'chat_pass'; stage: Stage; seat: number }
+  | { type: 'chat_ended'; stage: Stage; reason: ChatEndReason }
   /** Private: what a model was thinking when it acted. */
   | {
       type: 'thoughts';
@@ -97,6 +109,8 @@ export type GameEventBody =
   | { type: 'input_received'; seat: number; requestId: string }
   | { type: 'agent_error'; seat: number; action: ActionRequest['kind']; message: string }
   | { type: 'game_error'; message: string };
+
+export type ChatEndReason = 'time' | 'quiet' | 'limit';
 
 export type GameEventType = GameEventBody['type'];
 

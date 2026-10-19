@@ -76,7 +76,13 @@ export function transcript(events: GameEvent[], seat: number, players: PlayerInf
         lines.push(`${n(e.seat)} claims their back row is ${claimed(e.claim)}.${e.say ? ` ${n(e.seat)}: "${e.say}"` : ''}`);
         break;
       case 'speech':
-        lines.push(`${n(e.seat)}: "${e.say}"`);
+        lines.push(e.to !== undefined ? `${n(e.seat)} to ${n(e.to)}: "${e.say}"` : `${n(e.seat)}: "${e.say}"`);
+        break;
+      case 'chat_started':
+        lines.push(`--- OPEN FLOOR (${Math.round(e.durationMs / 1000)} seconds to talk) ---`);
+        break;
+      case 'chat_ended':
+        lines.push('--- The floor is closed ---');
         break;
       case 'thoughts':
         if (e.seat === seat && e.thoughts) {
@@ -166,6 +172,19 @@ Respond with JSON: {"thoughts": "...", "claimed_back_row": [${request.backCount}
     case 'speak':
       return `${request.prompt}
 Respond with JSON: {"thoughts": "...", "say": "..."}`;
+    case 'chat': {
+      const others = request.participants.filter((s) => s !== ctx.seat).map((s) => name(p, s));
+      const purpose =
+        ctx.stage === 'final'
+          ? `This is your conversation with ${describeList(others)} before you both secretly choose SPLIT or STEAL (jackpot ${formatMoney(ctx.jackpot ?? 0)}).`
+          : 'This is the open discussion before the secret vote.';
+      const reply =
+        request.replyTo !== undefined ? `${name(p, request.replyTo)} just spoke to you directly, so reply to them.\n` : '';
+      return `OPEN FLOOR: about ${request.secondsLeft} seconds left. ${purpose}
+${reply}Talk to everyone, or to one player by name: question their claims, defend yourself, make a deal, or persuade. Keep it short and natural, like real conversation (under 40 words), and don't repeat yourself. If you have nothing useful to add right now, pass.
+Respond with JSON: {"thoughts": "...", "say": "...", "to": "<one player's exact name, or everyone>"}
+or, to stay quiet: {"thoughts": "...", "pass": true}`;
+    }
     case 'vote': {
       const names = request.candidates.map((s) => `"${name(p, s)}"`).join(', ');
       return `Secretly vote to eliminate one player. You can't vote for yourself. Choose one of: ${names}.

@@ -31,10 +31,10 @@ export class Host {
     );
   }
 
-  openDiscussion(): string {
+  openDiscussion(seconds: number): string {
     return this.one(
-      'Somebody here could be lying. Talk it through.',
-      "Who do you believe? Who don't you trust? Discuss.",
+      `Somebody here could be lying. The floor is open for ${seconds} seconds: talk it through.`,
+      `Who do you believe? Who don't you trust? You've got ${seconds} seconds. Talk to each other.`,
     );
   }
 
@@ -68,8 +68,9 @@ export class Host {
     return `That's five balls won. The jackpot stands at ${formatMoney(jackpot)}.`;
   }
 
-  splitOrSteal(jackpot: number): string {
-    return `${formatMoney(jackpot)} is on the table. In front of you are two golden balls: one says SPLIT, one says STEAL. Talk to each other first.`;
+  splitOrSteal(jackpot: number, chatSeconds: number): string {
+    const talk = chatSeconds > 0 ? ` You have ${chatSeconds} seconds to talk to each other first.` : '';
+    return `${formatMoney(jackpot)} is on the table. In front of you are two golden balls: one says SPLIT, one says STEAL.${talk}`;
   }
 
   chooseNow(): string {

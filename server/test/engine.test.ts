@@ -8,9 +8,9 @@ import {
   type GameOptions,
   type PlayerInfo,
 } from '@gb/shared';
-import { GameEngine } from '../src/engine/engine.js';
+import { GameEngine, GameFatalError } from '../src/engine/engine.js';
 import { MockAgent } from '../src/agents/mock.js';
-import type { Agent, AgentContext, AgentResult } from '../src/agents/types.js';
+import { AgentError, type Agent, type AgentContext, type AgentResult } from '../src/agents/types.js';
 
 const players: PlayerInfo[] = ['Ava', 'Ben', 'Cleo', 'Dev'].map((name, seat) => ({ seat, name, kind: 'mock' }));
 
@@ -290,11 +290,118 @@ describe('GameEngine', () => {
   });
 
   it('is reproducible from its seed', async () => {
-    const strip = (events: GameEvent[]) => events.map(({ ts: _ts, ...rest }) => rest);
+    // Timestamps (and chat deadlines) come from the wall clock.
+    const strip = (events: GameEvent[]) => events.map(({ ts: _ts, ...rest }) => ('endsAt' in rest ? { ...rest, endsAt: 0 } : rest));
     const a = await play(1234);
     const b = await play(1234);
     expect(strip(a.events)).toEqual(strip(b.events));
     expect(cashTotal([])).toBe(0);
+  });
+
+  describe('open floor chat', () => {
+    const floorEvents = (events: GameEvent[], stage: string) => {
+      const start = events.findIndex((e) => e.type === 'chat_started' && e.stage === stage);
+      const end = events.findIndex((e, i) => i > start && e.type === 'chat_ended');
+      return { started: events[start], ended: events[end], inside: events.slice(start + 1, end) };
+    };
+    const speechesIn = (inside: GameEvent[]) =>
+      inside.filter((e): e is Extract<GameEvent, { type: 'speech' }> => e.type === 'speech');
+
+    it('stops at the message cap', async () => {
+      const chatty: Script = (req) => (req.kind === 'chat' ? { say: 'Talking!' } : undefined);
+      const { events } = await play(31, [chatty, chatty, chatty, chatty], { chatMaxMessages: 6 });
+      const r1 = floorEvents(events, 'r1');
+      expect(speechesIn(r1.inside)).toHaveLength(6);
+      expect(r1.ended).toMatchObject({ reason: 'limit' });
+    });
+
+    it('lets whoever is spoken to reply next', async () => {
+      // Everyone always addresses the next player round the table.
+      const addressNext: Script = (req, ctx) => {
+        if (req.kind !== 'chat') return undefined;
+        const i = req.participants.indexOf(ctx.seat);
+        return { say: 'Your turn', to: req.participants[(i + 1) % req.participants.length] };
+      };
+      const { events } = await play(32, [addressNext, addressNext, addressNext, addressNext], { chatMaxMessages: 8 });
+      const said = speechesIn(floorEvents(events, 'r1').inside);
+      expect(said.length).toBe(8);
+      for (let i = 0; i + 1 < said.length; i++) expect(said[i + 1]!.seat).toBe(said[i]!.to);
+    });
+
+    it("doesn't let two players hog the floor", async () => {
+      // Everyone answers whoever spoke to them, and otherwise talks to the first other player.
+      const replier: Script = (req, ctx) => {
+        if (req.kind !== 'chat') return undefined;
+        const to = req.replyTo ?? req.participants.find((s) => s !== ctx.seat)!;
+        return { say: 'No, you!', to };
+      };
+      const { events } = await play(38, [replier, replier, replier, replier], { chatMaxMessages: 8 });
+      const r1 = floorEvents(events, 'r1');
+      const speakers = new Set(speechesIn(r1.inside).map((s) => s.seat));
+      expect(speakers.size).toBe((r1.started as Extract<GameEvent, { type: 'chat_started' }>).participants.length);
+    });
+
+    it('closes early when everyone has nothing to say', async () => {
+      const quiet: Script = (req) => (req.kind === 'chat' ? { pass: true } : undefined);
+      const { events } = await play(33, [quiet, quiet, quiet, quiet]);
+      const r1 = floorEvents(events, 'r1');
+      expect(speechesIn(r1.inside)).toHaveLength(0);
+      expect(r1.inside.filter((e) => e.type === 'chat_pass')).toHaveLength(4);
+      expect(r1.ended).toMatchObject({ reason: 'quiet' });
+    });
+
+    it('closes when time runs out', async () => {
+      const slow: Agent = {
+        async act(request, ctx, meta) {
+          if (request.kind === 'chat') {
+            await new Promise((r) => setTimeout(r, 300));
+            return { response: { say: 'Let me think about that...' } };
+          }
+          return new MockAgent('mock/honest', ctx.seat).act(request, ctx, meta);
+        },
+      };
+      const events: GameEvent[] = [];
+      const started = Date.now();
+      await new GameEngine({
+        players,
+        agents: [slow, slow, slow, slow],
+        options: options(34, { chatSeconds: 1, finalChatSeconds: 1, chatMaxMessages: 40 }),
+        emit: (e) => events.push(e),
+      }).run();
+      const r1 = floorEvents(events, 'r1');
+      expect(r1.ended).toMatchObject({ reason: 'time' });
+      expect(speechesIn(r1.inside).length).toBeLessThanOrEqual(5);
+      expect(Date.now() - started).toBeLessThan(10_000);
+    });
+
+    it('is a two-way conversation in the final, and can be switched off', async () => {
+      const { events } = await play(35);
+      const final = floorEvents(events, 'final');
+      const finalists = (final.started as Extract<GameEvent, { type: 'chat_started' }>).participants;
+      expect(finalists).toHaveLength(2);
+      const said = speechesIn(final.inside);
+      for (let i = 0; i + 1 < said.length; i++) expect(said[i + 1]!.seat).not.toBe(said[i]!.seat);
+
+      const silent = await play(36, [], { chatSeconds: 0, finalChatSeconds: 0 });
+      expect(silent.events.some((e) => e.type === 'chat_started')).toBe(false);
+    });
+  });
+
+  it('stops the game when a contestant hits an unrecoverable error', async () => {
+    const broken: Agent = {
+      async act() {
+        throw new AgentError('OpenRouter rejected the API key (401)', undefined, undefined, true);
+      },
+    };
+    const events: GameEvent[] = [];
+    const engine = new GameEngine({
+      players,
+      agents: [broken, ...players.slice(1).map((p) => new MockAgent('mock/honest', p.seat))],
+      options: options(37),
+      emit: (e) => events.push(e),
+    });
+    await expect(engine.run()).rejects.toBeInstanceOf(GameFatalError);
+    expect(events.some((e) => e.type === 'agent_error')).toBe(false);
   });
 
   it('can be aborted mid-game', async () => {

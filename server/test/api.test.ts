@@ -24,9 +24,9 @@ let manager: GameManager;
 async function setup(overrides: Partial<Config> = {}) {
   const cfg: Config = { ...config, mockDelayMs: 0, adminPassword: '', webDist: '/nonexistent', ...overrides };
   db = new Db(':memory:');
-  const catalog = new ModelCatalog(null, cfg.featuredModels, quiet);
-  manager = new GameManager(db, cfg, null, catalog, quiet);
-  app = await buildApp({ cfg, db, manager, catalog, hasOpenRouterKey: false, logger: false });
+  const catalog = new ModelCatalog({}, cfg.featuredModels, quiet);
+  manager = new GameManager(db, cfg, {}, catalog, quiet);
+  app = await buildApp({ cfg, db, manager, catalog, clients: {}, logger: false });
 }
 
 async function waitFor<T>(fn: () => T | undefined | false, timeoutMs = 5000): Promise<T> {
@@ -54,7 +54,8 @@ describe('API', () => {
 
   it('reports server info', async () => {
     const info: ServerInfo = (await app.inject('/api/info')).json();
-    expect(info.hasOpenRouterKey).toBe(false);
+    expect(info.providers.every((p) => !p.configured)).toBe(true);
+    expect(info.providers.map((p) => p.id)).toEqual(['openrouter', 'huggingface', 'ollama']);
     expect(info.mockStrategies.map((m) => m.id)).toContain('mock/honest');
   });
 
@@ -112,7 +113,7 @@ describe('API', () => {
       url: '/api/games',
       payload: {
         seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))],
-        options: { discussionPasses: 1 },
+        options: { chatSeconds: 30, finalChatSeconds: 30 },
       },
     });
     const { id, playerToken, seat } = res.json<CreateGameResponse>();
@@ -124,6 +125,7 @@ describe('API', () => {
     expect(spectator.events.every((e) => e.vis === 'public')).toBe(true);
 
     let moves = 0;
+    const chatsJoined = new Set<number>();
     while (manager.isRunning(id)) {
       const me = await getGame(id, playerToken);
       expect(me.viewer.seat).toBe(seat);
@@ -131,6 +133,18 @@ describe('API', () => {
       for (const e of me.events) {
         if (e.type === 'back_row') expect(e.seat).toBe(seat);
         expect(e.type).not.toBe('thoughts');
+      }
+      // Join each open floor: ask an AI something directly, then say we're done.
+      const opened = me.events.findLast((e) => e.type === 'chat_started' || e.type === 'chat_ended');
+      if (opened?.type === 'chat_started' && opened.participants.includes(seat!) && !chatsJoined.has(opened.seq)) {
+        chatsJoined.add(opened.seq);
+        const ai = opened.participants.find((s) => s !== seat)!;
+        const headers = { 'x-player-token': playerToken! };
+        const said = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers, payload: { text: 'What is really on your back row?', to: ai } });
+        expect(said.statusCode, said.body).toBe(200);
+        const done = await app.inject({ method: 'POST', url: `/api/games/${id}/chat/done`, headers });
+        expect(done.statusCode, done.body).toBe(200);
+        continue;
       }
       const answered = new Set(me.events.filter((e) => e.type === 'input_received').map((e) => (e as { requestId: string }).requestId));
       const pending = me.events.filter(
@@ -151,7 +165,8 @@ describe('API', () => {
       expect(act.statusCode, act.body).toBe(200);
       moves++;
     }
-    expect(moves).toBeGreaterThan(2);
+    expect(moves).toBeGreaterThanOrEqual(2); // at least a claim and a vote
+    expect(chatsJoined.size).toBeGreaterThanOrEqual(1);
 
     const after = await getGame(id);
     expect(after.status).toBe('finished');
@@ -159,6 +174,18 @@ describe('API', () => {
     expect(after.viewer.omniscient).toBe(true);
     expect(after.events.some((e) => e.type === 'thoughts')).toBe(true);
     expect(after.players.find((p) => p.seat === seat)!.name).toBe('Kit');
+    // Whoever the human spoke to answered promptly (a message already in flight may land first).
+    const speeches = after.events.filter((e): e is Extract<GameEvent, { type: 'speech' }> => e.type === 'speech');
+    const asked = speeches.filter((s) => s.seat === seat && s.to !== undefined);
+    expect(asked.length).toBe(chatsJoined.size);
+    for (const q of asked) {
+      const closed = after.events.find((e) => e.seq > q.seq && e.type === 'chat_ended')!;
+      const replies = speeches.filter((s) => s.seq > q.seq && s.seq < closed.seq && s.seat !== seat);
+      if (replies.length > 0) expect(replies.slice(0, 2).map((s) => s.seat)).toContain(q.to);
+    }
+    // Chat is rejected once the game is over.
+    const late = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers: { 'x-player-token': playerToken! }, payload: { text: 'hi' } });
+    expect(late.statusCode).toBe(409);
   });
 
   it('validates human moves and rejects strangers', async () => {
