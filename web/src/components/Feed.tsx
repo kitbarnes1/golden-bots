@@ -207,6 +207,21 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
           </div>,
         );
         break;
+      case 'back_rows_revealed':
+        for (const row of e.rows) {
+          items.push(
+            <div key={`${key}-${row.seat}`} className={`feed__elim ${row.truthful ? '' : 'feed__elim--liar'}`}>
+              {who(row.seat)} turns over their back row:
+              <span className="feed__balls">
+                {row.back.map((b) => (
+                  <Ball key={b.id} ball={b} size="xs" />
+                ))}
+              </span>
+              <strong>{row.truthful ? 'Just as they claimed.' : 'They were lying!'}</strong>
+            </div>,
+          );
+        }
+        break;
       case 'bin_or_win_started':
         items.push(
           <div key={key} className="feed__divider">

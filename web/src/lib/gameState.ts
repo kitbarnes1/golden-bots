@@ -22,6 +22,8 @@ export interface SeatView {
   eliminatedStage: 'r1' | 'r2' | null;
   /** Back row revealed on elimination (public). */
   revealed?: { back: Ball[]; truthful: boolean };
+  /** Back row shown to everyone after this round's vote (players who stayed in). */
+  backShown?: boolean;
   votesReceived: number;
   voted: boolean;
   choiceLocked: boolean;
@@ -110,6 +112,7 @@ function apply(v: GameView, e: GameEvent): void {
       for (const s of v.seats) {
         s.claim = null;
         s.back = null;
+        s.backShown = false;
         s.votesReceived = 0;
         s.voted = false;
         if (!s.eliminatedStage) {
@@ -144,6 +147,13 @@ function apply(v: GameView, e: GameEvent): void {
       s.back = e.back;
       break;
     }
+    case 'back_rows_revealed':
+      for (const row of e.rows) {
+        const s = v.seats[row.seat]!;
+        s.back = row.back;
+        s.backShown = true;
+      }
+      break;
     case 'bin_or_win_started':
       v.stage = 'bow';
       v.board = {

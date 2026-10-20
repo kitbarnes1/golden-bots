@@ -401,6 +401,17 @@ export class GameEngine {
     this.say(this.host.eliminated(s.info.name, s.back, truthful));
     s.front = [];
     s.back = [];
+
+    // As on the show, everyone else turns their back row over too.
+    const rows = this.activeSeats().map((other) => {
+      const o = this.seats[other]!;
+      const said = o.claim ?? [];
+      return { seat: other, back: o.back, claim: said, truthful: claimIsTruthful(said, o.back) };
+    });
+    if (rows.length) {
+      this.push({ type: 'back_rows_revealed', stage, rows });
+      this.say(this.host.othersRevealed(rows.map((r) => ({ name: this.seats[r.seat]!.info.name, back: r.back, truthful: r.truthful }))));
+    }
   }
 
   private async binOrWin(): Promise<number> {

@@ -60,6 +60,13 @@ export class Host {
     return "No agreement. It's down to the machine: whoever draws the Killer is out.";
   }
 
+  othersRevealed(rows: { name: string; back: Ball[]; truthful: boolean }[]): string {
+    const each = rows.map(
+      (r) => `${r.name} had ${describeList(r.back.map(describeBall))}${r.truthful ? ', just as claimed' : ', and was lying'}`,
+    );
+    return `And the rest of you, back rows please. ${each.join('; ')}.`;
+  }
+
   eliminated(name: string, back: Ball[], truthful: boolean): string {
     const balls = describeList(back.map(describeBall));
     return truthful

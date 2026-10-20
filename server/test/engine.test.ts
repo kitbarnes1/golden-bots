@@ -3,6 +3,7 @@ import {
   DEFAULT_OPTIONS,
   canSee,
   cashTotal,
+  claimIsTruthful,
   type ActionRequest,
   type GameEvent,
   type GameOptions,
@@ -461,6 +462,23 @@ describe('GameEngine', () => {
 
       const silent = await play(36, [], { chatSeconds: 0, finalChatSeconds: 0, reflectSeconds: 0 });
       expect(silent.events.some((e) => e.type === 'chat_started')).toBe(false);
+    });
+
+    it('turns over everyone else’s back row after each vote, as on the show', async () => {
+      const { events } = await play(41);
+      for (const stage of ['r1', 'r2'] as const) {
+        const out = ofType(events, 'eliminated').find((e) => e.stage === stage)!;
+        const shown = ofType(events, 'back_rows_revealed').find((e) => e.stage === stage)!;
+        expect(shown.vis).toBe('public');
+        expect(shown.seq).toBeGreaterThan(out.seq);
+        expect(shown.rows.map((r) => r.seat)).not.toContain(out.seat);
+        expect(shown.rows).toHaveLength(stage === 'r1' ? 3 : 2);
+        for (const row of shown.rows) {
+          const dealt = ofType(events, 'back_row').find((e) => e.stage === stage && e.seat === row.seat)!;
+          expect(row.back).toEqual(dealt.back);
+          expect(row.truthful).toBe(claimIsTruthful(row.claim, row.back));
+        }
+      }
     });
 
     it('lets the players left talk over each vote, without whoever just went', async () => {

@@ -26,8 +26,8 @@ export function systemPrompt(ctx: AgentContext): string {
   return `You are ${me.name}, a contestant on "Golden Balls", the British TV game show.${identity} Your opponents are ${describeList(others)}. They may be other AI models or humans.
 
 HOW THE GAME WORKS
-- Round 1: 12 cash balls (worth £10 to £75,000) from the Golden Bank plus 4 KILLER balls are shuffled and dealt, 4 to each of the 4 players: 2 on your front row (everyone can see them) and 2 on your back row (only you can see them). Each player announces what is on their back row. You may tell the truth or lie. After a discussion, everyone secretly votes to eliminate one player. The eliminated player leaves with nothing, all of their balls are thrown away, and their back row is revealed so everyone sees whether they lied.
-- Round 2: The 3 survivors' 12 balls go back in the machine with 2 more cash balls and 1 more KILLER (15 balls). Each player gets 2 on the front row and 3 on the back row. Same again: claim, discuss, vote. One more player is eliminated.
+- Round 1: 12 cash balls (worth £10 to £75,000) from the Golden Bank plus 4 KILLER balls are shuffled and dealt, 4 to each of the 4 players: 2 on your front row (everyone can see them) and 2 on your back row (only you can see them). Each player announces what is on their back row. You may tell the truth or lie. After a discussion, everyone secretly votes to eliminate one player. Then everyone's back row is revealed, so everyone sees who lied. The eliminated player leaves with nothing and all of their balls are thrown away.
+- Round 2: The 3 survivors' 12 balls go back in the machine with 2 more cash balls and 1 more KILLER (15 balls). Each player gets 2 on the front row and 3 on the back row. Same again: claim, discuss, vote, reveal. One more player is eliminated.
 - Ties: if a vote is tied, the players not involved must agree who goes. If they can't agree (or everyone is tied), each tied player draws a ball from the machine and whoever draws a KILLER is out.
 - Bin or Win: the 2 finalists' 10 balls from Round 2 (cash, and any KILLERs among them) plus 1 more KILLER (11 balls) are mixed up face down, so nobody knows which is which. The finalists take turns: one picks a ball to BIN (thrown away), the other picks a ball to WIN (added to the jackpot). Cash won is added to the jackpot; each KILLER won divides the jackpot so far by 10. It ends when 5 balls have been won. The jackpot is shared by both finalists until Split or Steal, so binning a KILLER is good news for you both and binning cash throws that money away. Back rows stop mattering here: every ball is in the machine and nobody can tell which is which.
 - Split or Steal: the finalists talk, then each secretly chooses SPLIT or STEAL. Both SPLIT: they share the jackpot 50/50. One STEALs: the stealer takes everything and the other gets nothing. Both STEAL: both get nothing. Promises made in conversation are not binding.
@@ -110,6 +110,11 @@ export function transcript(events: GameEvent[], seat: number, players: PlayerInf
           `${n(e.seat)} is ELIMINATED. Their back row was really ${balls(e.back)} (they claimed ${claimed(e.claim)}, so they ${e.truthful ? 'told the truth' : 'LIED'}).`,
         );
         break;
+      case 'back_rows_revealed':
+        lines.push(
+          `The others' back rows are revealed: ${e.rows.map((r) => `${n(r.seat)} really had ${balls(r.back)} (claimed ${claimed(r.claim)}, so ${r.truthful ? 'told the truth' : 'LIED'})`).join('; ')}.`,
+        );
+        break;
       case 'bin_or_win_started':
         lines.push(
           `--- BIN OR WIN --- ${e.ballCount} balls face down. Cash brought into the final: ${e.carried.map((c) => `${n(c.seat)} ${formatMoney(c.amount)}`).join(', ')}.`,
@@ -164,8 +169,8 @@ function situation(ctx: AgentContext): string {
     );
     lines.push(`Face-down balls left to choose from: ${open.join(', ')}.`);
     lines.push(`Won so far: ${balls(ctx.board.won)}. Binned so far: ${balls(ctx.board.binned)}.`);
-    const killers = killersLeft(ctx);
-    if (killers) lines.push(killers);
+    const inside = machineContents(ctx);
+    if (inside) lines.push(inside);
     lines.push(`Jackpot so far: ${formatMoney(ctx.board.jackpot)}, shared by you and ${others} until Split or Steal.`);
   }
   if (ctx.stage === 'final' && ctx.jackpot !== undefined) {
@@ -175,37 +180,38 @@ function situation(ctx: AgentContext): string {
 }
 
 /**
- * What a finalist can work out about the KILLERs in the Bin or Win machine from
- * what they've seen: their own round 2 balls, the other front row, the extra one.
- * Worked out here because models lose count when left to do it themselves.
+ * What's still in the Bin or Win machine. Every finalist ball has been seen by
+ * now (front rows, and back rows revealed after the vote), so it can be listed
+ * exactly; models lose track when left to work it out from the transcript.
  */
-function killersLeft(ctx: AgentContext): string | null {
+function machineContents(ctx: AgentContext): string | null {
   const dealt = ctx.events.findLast(
     (e): e is Extract<GameEvent, { type: 'round_started' }> => e.type === 'round_started' && e.stage === 'r2',
   );
-  const mine = ctx.events.findLast(
-    (e): e is Extract<GameEvent, { type: 'back_row' }> => e.type === 'back_row' && e.stage === 'r2' && e.seat === ctx.seat,
+  const revealed = ctx.events.findLast(
+    (e): e is Extract<GameEvent, { type: 'back_rows_revealed' }> => e.type === 'back_rows_revealed' && e.stage === 'r2',
   );
-  const other = ctx.activeSeats.find((s) => s !== ctx.seat);
-  if (!dealt || !mine || other === undefined || !ctx.board) return null;
-  const count = (list: Ball[]) => list.filter((b) => b.kind === 'killer').length;
-  const myBalls = [...(dealt.dealt.find((d) => d.seat === ctx.seat)?.front ?? []), ...mine.back];
-  const theirs = dealt.dealt.find((d) => d.seat === other);
-  const mineK = count(myBalls);
-  const theirFrontK = count(theirs?.front ?? []);
-  const known = mineK + theirFrontK + RULES.bow.extraKillers;
-  const out = count(ctx.board.won) + count(ctx.board.binned);
-  const left = Math.max(0, known - out);
-  const them = name(ctx.players, other);
-  const hidden = `${them}'s ${theirs?.backCount ?? 3} hidden balls`;
-  // Spell the sum out: models lose count otherwise.
-  return (
-    `KILLERs you know went into the machine: ${mineK} among your ${myBalls.length} balls + ${theirFrontK} on ${them}'s front row + the extra one = ${known}. ` +
-    `${hidden} could hold more. ${out} ${out === 1 ? 'has' : 'have'} come out so far, so ` +
-    (left > 0
-      ? `at least ${left} ${left === 1 ? 'is' : 'are'} still in there.`
-      : `none that you know of are left, though ${hidden} could still hold some, so don't count on the rest being cash.`)
-  );
+  if (!dealt || !revealed || !ctx.board) return null;
+  const key = (b: Ball) => (b.kind === 'killer' ? 'killer' : String(b.value));
+  const left = new Map<string, number>();
+  const add = (b: Ball, n: number) => left.set(key(b), (left.get(key(b)) ?? 0) + n);
+  for (const seat of ctx.activeSeats) {
+    for (const b of dealt.dealt.find((d) => d.seat === seat)?.front ?? []) add(b, 1);
+    for (const b of revealed.rows.find((r) => r.seat === seat)?.back ?? []) add(b, 1);
+  }
+  left.set('killer', (left.get('killer') ?? 0) + RULES.bow.extraKillers);
+  for (const b of [...ctx.board.won, ...ctx.board.binned]) add(b, -1);
+  const open = ctx.board.slots.filter((b) => b === null).length;
+  const listed = [...left.values()].reduce((sum, n) => sum + Math.max(0, n), 0);
+  if (listed !== open) return null; // Shouldn't happen; better silent than wrong.
+  const killers = left.get('killer') ?? 0;
+  const cash = [...left.entries()]
+    .filter(([k, n]) => k !== 'killer' && n > 0)
+    .flatMap(([k, n]) => Array.from({ length: n }, () => Number(k)))
+    .sort((a, b) => a - b)
+    .map((v) => formatMoney(v));
+  const parts = [...cash, ...(killers > 0 ? [`${killers} KILLER${killers === 1 ? '' : 's'}`] : [])];
+  return `Everyone has seen every ball by now, so you know what's still in the machine, just not which ball is which: ${describeList(parts)} (${killers} KILLER${killers === 1 ? '' : 's'} among ${open} balls).`;
 }
 
 function task(request: ActionRequest, ctx: AgentContext): string {

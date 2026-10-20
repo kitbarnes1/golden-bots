@@ -80,6 +80,12 @@ export type GameEventBody =
       claim: ClaimValue[];
       truthful: boolean;
     }
+  /** As on the show: once the vote is settled, the players staying in show their back rows too. */
+  | {
+      type: 'back_rows_revealed';
+      stage: 'r1' | 'r2';
+      rows: { seat: number; back: Ball[]; claim: ClaimValue[]; truthful: boolean }[];
+    }
   | {
       type: 'bin_or_win_started';
       seats: [number, number];

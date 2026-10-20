@@ -26,6 +26,8 @@ interface SeatRecap {
   votedFor?: number;
   votes: number;
   eliminated: boolean;
+  /** Back row turned over for everyone after the vote. */
+  shown: boolean;
 }
 
 interface RoundRecap {
@@ -55,7 +57,16 @@ export function buildRecap(events: GameEvent[], name: (seat: number) => string):
       case 'round_started':
         recap.rounds.push({
           stage: e.stage,
-          seats: e.dealt.map((d) => ({ seat: d.seat, front: d.front, backCount: d.backCount, back: null, claim: null, votes: 0, eliminated: false })),
+          seats: e.dealt.map((d) => ({
+            seat: d.seat,
+            front: d.front,
+            backCount: d.backCount,
+            back: null,
+            claim: null,
+            votes: 0,
+            eliminated: false,
+            shown: false,
+          })),
         });
         break;
       case 'back_row': {
@@ -85,11 +96,21 @@ export function buildRecap(events: GameEvent[], name: (seat: number) => string):
         const s = seatIn(e.stage, e.seat);
         if (s) {
           s.eliminated = true;
+          s.shown = true;
           s.back = e.back;
           s.claim = e.claim;
         }
         break;
       }
+      case 'back_rows_revealed':
+        for (const row of e.rows) {
+          const s = seatIn(e.stage, row.seat);
+          if (s) {
+            s.shown = true;
+            s.back = row.back;
+          }
+        }
+        break;
       case 'bin_or_win_started':
         recap.bow = { carried: e.carried, picks: [], jackpot: 0 };
         break;
@@ -139,7 +160,7 @@ export function RoundsReview({
           <h2>{r.stage === 'r1' ? 'Round 1' : 'Round 2'}</h2>
           <div className="review__seats">
             {r.seats.map((s) => {
-              const known = s.back !== null && (showHidden || s.eliminated || s.seat === viewerSeat);
+              const known = s.back !== null && (showHidden || s.shown || s.seat === viewerSeat);
               const honest = known && s.claim ? claimIsTruthful(s.claim, s.back!) : null;
               return (
                 <article key={s.seat} className={`review__seat${s.eliminated ? ' review__seat--out' : ''}`} style={dot(s.seat)}>

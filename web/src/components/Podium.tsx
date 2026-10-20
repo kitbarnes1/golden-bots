@@ -17,7 +17,7 @@ export function Podium({ seat, reveal, isYou, thinking, votingOpen }: PodiumProp
   const out = seat.eliminatedStage !== null;
   const color = SEAT_COLORS[info.seat % SEAT_COLORS.length];
   const backBalls = out ? (seat.revealed?.back ?? []) : seat.back;
-  const showBack = out || (backBalls !== null && (reveal || isYou));
+  const showBack = out || (backBalls !== null && (reveal || isYou || seat.backShown === true));
   const lying =
     !out && showBack && seat.claim && backBalls ? !claimIsTruthful(seat.claim, backBalls) : null;
   // Line claims up with the real balls they match, so the lies stand out.
