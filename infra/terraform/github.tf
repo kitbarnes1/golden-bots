@@ -32,7 +32,7 @@ resource "aws_iam_role" "github_deploy" {
       Condition = {
         StringEquals = {
           "${local.github_oidc_url}:aud" = "sts.amazonaws.com"
-          "${local.github_oidc_url}:sub" = "repo:${var.github_repository}:ref:refs/heads/${var.github_deploy_branch}"
+          "${local.github_oidc_url}:sub" = "${var.github_oidc_subject_prefix}:ref:refs/heads/${var.github_deploy_branch}"
         }
       }
     }]

@@ -73,10 +73,15 @@ variable "extra_app_env" {
   default     = {}
 }
 
-variable "github_repository" {
-  description = "owner/repo allowed to deploy via GitHub Actions."
+variable "github_oidc_subject_prefix" {
+  description = <<-EOT
+    Start of the "sub" claim in this repo's GitHub OIDC tokens. Repos using GitHub's
+    immutable subjects identify themselves by id ("repo:owner@123/name@456"); older
+    ones by name ("repo:owner/name"). Check with:
+    gh api repos/OWNER/REPO/actions/oidc/customization/sub
+  EOT
   type        = string
-  default     = "kitbarnes1/golden_balls"
+  default     = "repo:kitbarnes1@54220514/golden_balls@1419212821"
 }
 
 variable "github_deploy_branch" {
