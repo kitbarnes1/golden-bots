@@ -79,13 +79,13 @@ export class ModelCatalog {
    */
   async list(): Promise<ModelOption[]> {
     if (!this.client) return [];
-    const unavailable = this.client.unavailable;
+    const client = this.client;
     const now = Date.now();
     const failed = (id: string) => {
       const c = this.checks.get(id);
       return c !== undefined && !c.ok && !c.transient && c.until > now;
     };
-    return (await this.listAll()).filter((m) => !unavailable.has(m.id) && !failed(m.id));
+    return (await this.listAll()).filter((m) => !client.isUnavailable(m.id) && !failed(m.id));
   }
 
   /**

@@ -168,6 +168,22 @@ describe('OpenRouterClient', () => {
     expect(err.fatal).toBe(false);
   });
 
+  it("treats a provider outage as a hiccup even when it comes back as a 404, and rests the model", async () => {
+    const entry = (id: string) => ({ id, name: id, created: 1, context_length: 100_000, pricing: { prompt: '0', completion: '0' } });
+    let calls = 0;
+    handler = ({ url }) => {
+      if (url.endsWith('/models')) return { json: { data: [entry('down/model:free'), entry('fine/model:free')] } };
+      calls++;
+      return { status: 404, json: { error: { code: 404, message: 'Provider returned error' } } };
+    };
+    const c = client({ maxRetries: 1 });
+    const catalog = new ModelCatalog(c, [], { warn: () => {} });
+    const err = (await c.chat({ model: 'down/model:free', messages: [] }).catch((e: unknown) => e)) as LlmError;
+    expect(err.fatal).toBe(false); // a fumble, not the end of the game
+    expect(calls).toBe(2); // retried once
+    expect((await catalog.list()).map((m) => m.id)).toEqual(['fine/model:free']);
+  });
+
   it('retries ordinary rate limits and server errors', async () => {
     let n = 0;
     handler = () =>

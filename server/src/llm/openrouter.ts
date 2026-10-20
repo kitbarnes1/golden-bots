@@ -53,9 +53,14 @@ export class LlmError extends Error {
 }
 
 const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
-/** OpenRouter's catch-all when the model's provider falls over: a hiccup, not a bad request. */
+/**
+ * OpenRouter's catch-all when the model's provider falls over, whatever status it
+ * passes on (seen with 400 and 404): a hiccup or outage, not a bad request.
+ */
 const PROVIDER_HICCUP = /provider returned error/i;
-const retryable = (status: number, message: string) => RETRYABLE.has(status) || (status === 400 && PROVIDER_HICCUP.test(message));
+const retryable = (status: number, message: string) => RETRYABLE.has(status) || PROVIDER_HICCUP.test(message);
+/** After a provider keeps failing, leave the model out of new lineups for this long. */
+const UNHEALTHY_MS = 10 * 60_000;
 
 interface RawMessage {
   content?: string | null;
@@ -69,6 +74,13 @@ export class OpenRouterClient {
   private readonly mustReason = new Set<string>();
   /** Models OpenRouter refused (403) or doesn't know (404), so they can be left out of lineups. */
   readonly unavailable = new Set<string>();
+  /** Models whose provider kept failing just now: model -> time it may be offered again. */
+  private readonly unhealthyUntil = new Map<string, number>();
+
+  /** Should this model be left out of lineups (refused, unknown, or its provider down right now)? */
+  isUnavailable(model: string): boolean {
+    return this.unavailable.has(model) || (this.unhealthyUntil.get(model) ?? 0) > Date.now();
+  }
 
   constructor(private readonly opts: OpenRouterOptions) {}
 
@@ -139,12 +151,13 @@ export class OpenRouterClient {
           continue;
         }
         const fatal = fatalMessage(res.status, message, req.model);
-        if (res.status === 403 || res.status === 404) this.unavailable.add(req.model);
+        if (fatal && (res.status === 403 || res.status === 404)) this.unavailable.add(req.model);
         if (fatal) throw new LlmError(fatal, true, res.status);
         if (retryable(res.status, message) && attempt < this.opts.maxRetries) {
           await sleep(backoffMs(attempt++, res.headers.get('retry-after'), res.status === 429), req.signal);
           continue;
         }
+        if (PROVIDER_HICCUP.test(message)) this.unhealthyUntil.set(req.model, Date.now() + UNHEALTHY_MS);
         throw new LlmError(`OpenRouter ${res.status}: ${message}`, false, res.status);
       }
 
@@ -222,12 +235,14 @@ export function parseModel(m: RawModel): CatalogModel {
 
 /** A clear message for errors that won't fix themselves, else null. */
 function fatalMessage(status: number, message: string, model: string): string | null {
+  // The model's provider failing (even with a 404) isn't the model being gone: retry, then fumble.
+  if (PROVIDER_HICCUP.test(message)) return null;
   if (status === 401) return `OpenRouter rejected the API key (401): ${message}`;
   // 403 is usually about the model (e.g. "only available on agentic harnesses"), not the key.
   if (status === 403) return `OpenRouter refused "${model}" (403): ${message}`;
   if (status === 402) return `OpenRouter says you're out of credits (402): ${message}`;
   if (status === 404) return `OpenRouter doesn't have the model "${model}" (404): ${message}`;
-  if (status === 400 && !PROVIDER_HICCUP.test(message)) return `OpenRouter rejected the request for "${model}" (400): ${message}`;
+  if (status === 400) return `OpenRouter rejected the request for "${model}" (400): ${message}`;
   if (status === 429 && /per[- ]?day|daily/i.test(message)) {
     return `OpenRouter's daily free-model limit is used up (429): ${message}`;
   }
