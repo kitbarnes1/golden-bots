@@ -157,6 +157,17 @@ describe('OpenRouterClient', () => {
     }
   });
 
+  it("retries a provider's hiccup, and doesn't stop the game if it keeps happening", async () => {
+    let n = 0;
+    handler = () => (++n < 2 ? { status: 400, json: { error: { message: 'Provider returned error' } } } : reply('{"ok":1}'));
+    expect((await client().chat({ model: 'a/b', messages: [] })).content).toBe('{"ok":1}');
+
+    handler = () => ({ status: 400, json: { error: { message: 'Provider returned error' } } });
+    const err = (await client({ maxRetries: 1 }).chat({ model: 'a/b', messages: [] }).catch((e: unknown) => e)) as LlmError;
+    expect(err).toBeInstanceOf(LlmError);
+    expect(err.fatal).toBe(false);
+  });
+
   it('retries ordinary rate limits and server errors', async () => {
     let n = 0;
     handler = () =>

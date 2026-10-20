@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_OPTIONS, type ActionRequest, type PlayerInfo } from '@gb/shared';
+import { DEFAULT_OPTIONS, type ActionRequest, type Ball, type PlayerInfo } from '@gb/shared';
 import { extractJson, interpret, LlmAgent, resolvePlayer } from '../src/agents/llm.js';
 import { parseClaimValue, validateResponse } from '../src/engine/validate.js';
 import type { ChatRequest, ChatResult, OpenRouterClient } from '../src/llm/openrouter.js';
@@ -125,5 +125,49 @@ describe('LlmAgent', () => {
     const user = userPrompt({ kind: 'claim', stage: 'r1', backCount: 2 }, ctx);
     expect(user).toContain('Your back row (only you can see): £5,000 and £10');
     expect(user).toContain('"claimed_back_row"');
+  });
+
+  it('spells out Bin or Win, including the KILLERs a finalist can account for', () => {
+    const killer = (id: string): Ball => ({ id, kind: 'killer' });
+    const cash = (id: string, value: number): Ball => ({ id, kind: 'cash', value });
+    const slots: (Ball | null)[] = Array.from({ length: 11 }, () => null);
+    slots[3] = killer('won');
+    const bow: AgentContext = {
+      ...ctx,
+      stage: 'bow',
+      activeSeats: [0, 1],
+      myFront: [],
+      myBack: [],
+      board: { slots, jackpot: 0, won: [killer('won')], binned: [] },
+      events: [
+        {
+          type: 'round_started',
+          stage: 'r2',
+          dealt: [
+            { seat: 0, front: [killer('k1'), cash('c1', 500)], backCount: 3 },
+            { seat: 1, front: [cash('c2', 20), killer('k2')], backCount: 3 },
+            { seat: 2, front: [cash('c3', 50), cash('c4', 75)], backCount: 3 },
+          ],
+          seq: 1,
+          ts: 0,
+          vis: 'public',
+        },
+        { type: 'back_row', stage: 'r2', seat: 0, back: [cash('c5', 10), killer('k3'), cash('c6', 1000)], seq: 2, ts: 0, vis: { seats: [0] } },
+      ],
+    };
+    expect(systemPrompt(bow)).toContain('binning a KILLER is good news');
+    const user = userPrompt({ kind: 'pick', action: 'bin', available: [0, 1, 2, 4] }, bow);
+    // Mine 2 + GPT-5's front 1 + the extra 1 = 4 known; 1 won already.
+    expect(user).toContain('2 among your 5 balls + 1 on GPT-5\'s front row + the extra one = 4');
+    expect(user).toContain('1 has come out so far, so at least 3 are still in there');
+    expect(user).toContain("Your old back row doesn't matter any more");
+    expect(user).toContain('shared by you and GPT-5 until Split or Steal');
+    expect(user).toContain('Choose a ball to BIN. It is thrown away and does not go into the jackpot');
+
+    // With every known KILLER out, say so plainly rather than "at least 0".
+    const cleared = { ...bow, board: { ...bow.board!, won: [killer('w1'), killer('w2')], binned: [killer('b1'), killer('b2')] } };
+    expect(userPrompt({ kind: 'pick', action: 'win', available: [0] }, cleared)).toContain(
+      "none that you know of are left, though GPT-5's 3 hidden balls could still hold some",
+    );
   });
 });

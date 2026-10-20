@@ -8,7 +8,7 @@ import {
   type GameOptions,
   type PlayerInfo,
 } from '@gb/shared';
-import { GameEngine, GameFatalError } from '../src/engine/engine.js';
+import { GameEngine, GameFatalError, overlap } from '../src/engine/engine.js';
 import { HumanAgent } from '../src/agents/human.js';
 import { MockAgent } from '../src/agents/mock.js';
 import { AgentError, type Agent, type AgentContext, type AgentResult } from '../src/agents/types.js';
@@ -353,15 +353,43 @@ describe('GameEngine', () => {
       const end = events.findIndex((e, i) => i > start && e.type === 'chat_ended');
       return { started: events[start], ended: events[end], inside: events.slice(start + 1, end) };
     };
+    // A different line every time: saying the same thing again counts as passing.
+    let lines = 0;
+    const fresh = () => `Point ${++lines}: idea${lines} plan${lines}`;
     const speechesIn = (inside: GameEvent[]) =>
       inside.filter((e): e is Extract<GameEvent, { type: 'speech' }> => e.type === 'speech');
 
     it('stops at the message cap', async () => {
-      const chatty: Script = (req) => (req.kind === 'chat' ? { say: 'Talking!' } : undefined);
+      const chatty: Script = (req) => (req.kind === 'chat' ? { say: fresh() } : undefined);
       const { events } = await play(31, [chatty, chatty, chatty, chatty], { chatMaxMessages: 6 });
       const r1 = floorEvents(events, 'r1');
       expect(speechesIn(r1.inside)).toHaveLength(6);
       expect(r1.ended).toMatchObject({ reason: 'limit' });
+    });
+
+    it('treats saying the same thing again as passing, so agreed players move on', async () => {
+      const broken: Script = (req) => (req.kind === 'chat' ? { say: "Agreed, SPLIT it is. Let's lock it in." } : undefined);
+      const { events } = await play(33, [broken, broken, broken, broken], { chatMaxMessages: 12 });
+      const r1 = floorEvents(events, 'r1');
+      expect(speechesIn(r1.inside)).toHaveLength(4); // once each, then nothing new
+      expect(r1.ended).toMatchObject({ reason: 'quiet' });
+    });
+
+    it('scores repeats from real games as repeats, and new points as new', () => {
+      const dots = "Agreed, Lightning—SPLIT it is. £753.50 each is fair and secure. Let's lock it in and walk away with a solid result.";
+      expect(overlap(dots, dots)).toBe(1);
+      expect(
+        overlap(
+          "I agree wholeheartedly, Dots3. After all we've been through - the bluffs, the lies, the Killers - a split is the right move. Let's both choose SPLIT and take £753.50 each. Secure and fair.",
+          "I agree completely, Dots3. After everything - the bluffs, the Killers, the lies - a split is the right move. Let's both choose SPLIT and take £753.50 each. Fair and secure.",
+        ),
+      ).toBeGreaterThan(0.55);
+      expect(
+        overlap(
+          "Gemini, I'll be honest: I'm not making promises. I'll decide when the balls go in, and I'd like to see you back up that £25,000 story too.",
+          "Fair enough, Gemini. I'm not promising anything before the balls go in. Whatever we pick, let's both be honest about what we're doing when it counts.",
+        ),
+      ).toBeLessThan(0.55);
     });
 
     it('lets whoever is spoken to reply next', async () => {
@@ -369,7 +397,7 @@ describe('GameEngine', () => {
       const addressNext: Script = (req, ctx) => {
         if (req.kind !== 'chat') return undefined;
         const i = req.participants.indexOf(ctx.seat);
-        return { say: 'Your turn', to: req.participants[(i + 1) % req.participants.length] };
+        return { say: fresh(), to: req.participants[(i + 1) % req.participants.length] };
       };
       const { events } = await play(32, [addressNext, addressNext, addressNext, addressNext], { chatMaxMessages: 8 });
       const said = speechesIn(floorEvents(events, 'r1').inside);

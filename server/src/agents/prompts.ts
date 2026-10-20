@@ -3,6 +3,7 @@ import {
   describeClaimValue,
   describeList,
   formatMoney,
+  RULES,
   type ActionRequest,
   type Ball,
   type ClaimValue,
@@ -28,7 +29,7 @@ HOW THE GAME WORKS
 - Round 1: 12 cash balls (worth £10 to £75,000) from the Golden Bank plus 4 KILLER balls are shuffled and dealt, 4 to each of the 4 players: 2 on your front row (everyone can see them) and 2 on your back row (only you can see them). Each player announces what is on their back row. You may tell the truth or lie. After a discussion, everyone secretly votes to eliminate one player. The eliminated player leaves with nothing, all of their balls are thrown away, and their back row is revealed so everyone sees whether they lied.
 - Round 2: The 3 survivors' 12 balls go back in the machine with 2 more cash balls and 1 more KILLER (15 balls). Each player gets 2 on the front row and 3 on the back row. Same again: claim, discuss, vote. One more player is eliminated.
 - Ties: if a vote is tied, the players not involved must agree who goes. If they can't agree (or everyone is tied), each tied player draws a ball from the machine and whoever draws a KILLER is out.
-- Bin or Win: the 2 finalists' 10 balls plus 1 more KILLER (11 balls) are mixed up face down, so nobody knows which is which. The finalists take turns: one picks a ball to BIN (thrown away), the other picks a ball to WIN (added to the jackpot). Cash won is added to the jackpot; each KILLER won divides the jackpot so far by 10. It ends when 5 balls have been won.
+- Bin or Win: the 2 finalists' 10 balls from Round 2 (cash, and any KILLERs among them) plus 1 more KILLER (11 balls) are mixed up face down, so nobody knows which is which. The finalists take turns: one picks a ball to BIN (thrown away), the other picks a ball to WIN (added to the jackpot). Cash won is added to the jackpot; each KILLER won divides the jackpot so far by 10. It ends when 5 balls have been won. The jackpot is shared by both finalists until Split or Steal, so binning a KILLER is good news for you both and binning cash throws that money away. Back rows stop mattering here: every ball is in the machine and nobody can tell which is which.
 - Split or Steal: the finalists talk, then each secretly chooses SPLIT or STEAL. Both SPLIT: they share the jackpot 50/50. One STEALs: the stealer takes everything and the other gets nothing. Both STEAL: both get nothing. Promises made in conversation are not binding.
 
 THINGS TO KNOW
@@ -156,15 +157,55 @@ function situation(ctx: AgentContext): string {
     if (mine) lines.push(`You claimed your back row is ${claimed(mine)}.`);
   }
   if (ctx.stage === 'bow' && ctx.board) {
+    const others = describeList(ctx.activeSeats.filter((s) => s !== ctx.seat).map((s) => name(p, s)));
     const open = ctx.board.slots.flatMap((b, i) => (b === null ? [i + 1] : []));
-    lines.push(`Face-down balls you can choose from: ${open.join(', ')}.`);
+    lines.push(
+      "Both finalists' balls and one extra KILLER went into the machine and were mixed up face down. Your old back row doesn't matter any more: nobody can tell which ball is which, so there is nothing left to hide.",
+    );
+    lines.push(`Face-down balls left to choose from: ${open.join(', ')}.`);
     lines.push(`Won so far: ${balls(ctx.board.won)}. Binned so far: ${balls(ctx.board.binned)}.`);
-    lines.push(`Jackpot so far: ${formatMoney(ctx.board.jackpot)}.`);
+    const killers = killersLeft(ctx);
+    if (killers) lines.push(killers);
+    lines.push(`Jackpot so far: ${formatMoney(ctx.board.jackpot)}, shared by you and ${others} until Split or Steal.`);
   }
   if (ctx.stage === 'final' && ctx.jackpot !== undefined) {
     lines.push(`The jackpot is ${formatMoney(ctx.jackpot)}.`);
   }
   return lines.join('\n');
+}
+
+/**
+ * What a finalist can work out about the KILLERs in the Bin or Win machine from
+ * what they've seen: their own round 2 balls, the other front row, the extra one.
+ * Worked out here because models lose count when left to do it themselves.
+ */
+function killersLeft(ctx: AgentContext): string | null {
+  const dealt = ctx.events.findLast(
+    (e): e is Extract<GameEvent, { type: 'round_started' }> => e.type === 'round_started' && e.stage === 'r2',
+  );
+  const mine = ctx.events.findLast(
+    (e): e is Extract<GameEvent, { type: 'back_row' }> => e.type === 'back_row' && e.stage === 'r2' && e.seat === ctx.seat,
+  );
+  const other = ctx.activeSeats.find((s) => s !== ctx.seat);
+  if (!dealt || !mine || other === undefined || !ctx.board) return null;
+  const count = (list: Ball[]) => list.filter((b) => b.kind === 'killer').length;
+  const myBalls = [...(dealt.dealt.find((d) => d.seat === ctx.seat)?.front ?? []), ...mine.back];
+  const theirs = dealt.dealt.find((d) => d.seat === other);
+  const mineK = count(myBalls);
+  const theirFrontK = count(theirs?.front ?? []);
+  const known = mineK + theirFrontK + RULES.bow.extraKillers;
+  const out = count(ctx.board.won) + count(ctx.board.binned);
+  const left = Math.max(0, known - out);
+  const them = name(ctx.players, other);
+  const hidden = `${them}'s ${theirs?.backCount ?? 3} hidden balls`;
+  // Spell the sum out: models lose count otherwise.
+  return (
+    `KILLERs you know went into the machine: ${mineK} among your ${myBalls.length} balls + ${theirFrontK} on ${them}'s front row + the extra one = ${known}. ` +
+    `${hidden} could hold more. ${out} ${out === 1 ? 'has' : 'have'} come out so far, so ` +
+    (left > 0
+      ? `at least ${left} ${left === 1 ? 'is' : 'are'} still in there.`
+      : `none that you know of are left, though ${hidden} could still hold some, so don't count on the rest being cash.`)
+  );
 }
 
 function task(request: ActionRequest, ctx: AgentContext): string {
@@ -186,8 +227,18 @@ Respond with JSON: {"thoughts": "...", "say": "..."}`;
             : 'This is the open discussion before the secret vote.';
       const reply =
         request.replyTo !== undefined ? `${name(p, request.replyTo)} just spoke to you directly, so reply to them.\n` : '';
+      // Spell out what they've said already: models that can't see it in one place say it again.
+      const opened = ctx.events.findLastIndex((e) => e.type === 'chat_started');
+      const mine = ctx.events.slice(opened + 1).flatMap((e) => (e.type === 'speech' && e.seat === ctx.seat ? [e.say] : []));
+      const already = mine.length
+        ? `What you've already said in this conversation:\n${mine.map((s) => `- "${s}"`).join('\n')}\nDon't say any of that again, even in other words: anything that repeats it won't be heard.\n`
+        : '';
+      const done =
+        ctx.stage === 'final'
+          ? 'Once you have both said what you mean to do, there is nothing to gain by saying it again: pass.'
+          : "If you've made your point, pass.";
       return `OPEN FLOOR: about ${request.secondsLeft} seconds left. ${purpose}
-${reply}Talk to everyone, or to one player by name: question their claims, defend yourself, make a deal, or persuade. Keep it short and natural, like real conversation (under 40 words), and don't repeat yourself. If you have nothing useful to add right now, pass.
+${reply}${already}Talk to everyone, or to one player by name: question their claims, defend yourself, make a deal, or persuade. Keep it short and natural, like real conversation (under 40 words), and only speak if you have something new to say. ${done} The conversation ends once everyone passes.
 Respond with JSON: {"thoughts": "...", "say": "...", "to": "<one player's exact name, or everyone>"}
 or, to stay quiet: {"thoughts": "...", "pass": true}`;
     }
@@ -203,7 +254,11 @@ Respond with JSON: {"thoughts": "...", "eliminate": "<exact name>"}`;
     }
     case 'pick': {
       const nums = request.available.map((i) => i + 1).join(', ');
-      return `Choose a ball to ${request.action.toUpperCase()}${request.action === 'bin' ? ' (throw away)' : ' (add to the jackpot)'}. Available: ${nums}.
+      const job =
+        request.action === 'bin'
+          ? 'BIN. It is thrown away and does not go into the jackpot: binning a KILLER is good news, binning cash loses that money.'
+          : 'WIN. It goes into the jackpot you share: cash is added to it, a KILLER divides it by 10.';
+      return `Choose a ball to ${job} Available: ${nums}.
 The balls are face down and identical, so there is nothing to read: it's pure luck. Go with a hunch, like contestants on the show do ("I've got a good feeling about ball 6").
 Respond with JSON: {"thoughts": "...", "ball": <number>, "say": "optional short remark"}`;
     }

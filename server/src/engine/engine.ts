@@ -92,6 +92,23 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const HUMAN_REPLY_WAIT_MS = 20_000;
 /** Minimum gap between a human's chat messages. */
 const HUMAN_MIN_GAP_MS = 1000;
+/**
+ * An AI message this close to one of its own earlier lines in the same chat
+ * counts as a pass. Measured on real chats: repeats scored 0.61 and up, new
+ * points 0.44 and below.
+ */
+const REPEAT_THRESHOLD = 0.55;
+
+/** How much two messages share their words (Dice coefficient, 0 to 1). */
+export function overlap(a: string, b: string): number {
+  const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9£]+/g, ' ').split(' ').filter((w) => w.length > 1));
+  const A = words(a);
+  const B = words(b);
+  if (!A.size || !B.size) return 0;
+  let shared = 0;
+  for (const w of A) if (B.has(w)) shared++;
+  return (2 * shared) / (A.size + B.size);
+}
 
 interface Floor {
   stage: Stage;
@@ -113,6 +130,8 @@ interface Floor {
   passed: Set<number>;
   humansDone: Set<number>;
   lastHumanPost: Map<number, number>;
+  /** Everything each player has said in this chat. */
+  said: Map<number, string[]>;
   /** Wakes the floor loop when it's waiting on a human. */
   wake: (() => void) | null;
 }
@@ -573,6 +592,7 @@ export class GameEngine {
       passed: new Set(),
       humansDone: new Set(),
       lastHumanPost: new Map(),
+      said: new Map(),
       wake: null,
     };
     this.floor = floor;
@@ -626,8 +646,11 @@ export class GameEngine {
           ...(askedBy !== undefined ? { replyTo: askedBy } : {}),
           ...(reflect ? { reflect: true } : {}),
         });
-        if (res.kind === 'chat' && res.say) {
-          this.recordChat(floor, next, res.say, res.to);
+        const say = res.kind === 'chat' ? res.say : null;
+        // Saying the same thing again adds nothing, so it counts as a pass and the chat can wind up.
+        const repeat = say !== null && (floor.said.get(next) ?? []).some((before) => overlap(before, say) >= REPEAT_THRESHOLD);
+        if (res.kind === 'chat' && say && !repeat) {
+          this.recordChat(floor, next, say, res.to);
         } else {
           floor.passed.add(next);
           floor.owed.delete(next);
@@ -675,6 +698,7 @@ export class GameEngine {
     const target = to !== null && to !== seat && floor.participants.includes(to) ? to : null;
     floor.messages++;
     floor.history.push(seat);
+    floor.said.set(seat, [...(floor.said.get(seat) ?? []), say]);
     floor.lastSpeaker = seat;
     floor.owed.delete(seat);
     if (target !== null) floor.owed.set(target, seat);

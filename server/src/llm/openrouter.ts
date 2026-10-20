@@ -53,6 +53,9 @@ export class LlmError extends Error {
 }
 
 const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+/** OpenRouter's catch-all when the model's provider falls over: a hiccup, not a bad request. */
+const PROVIDER_HICCUP = /provider returned error/i;
+const retryable = (status: number, message: string) => RETRYABLE.has(status) || (status === 400 && PROVIDER_HICCUP.test(message));
 
 interface RawMessage {
   content?: string | null;
@@ -138,7 +141,7 @@ export class OpenRouterClient {
         const fatal = fatalMessage(res.status, message, req.model);
         if (res.status === 403 || res.status === 404) this.unavailable.add(req.model);
         if (fatal) throw new LlmError(fatal, true, res.status);
-        if (RETRYABLE.has(res.status) && attempt < this.opts.maxRetries) {
+        if (retryable(res.status, message) && attempt < this.opts.maxRetries) {
           await sleep(backoffMs(attempt++, res.headers.get('retry-after'), res.status === 429), req.signal);
           continue;
         }
@@ -155,7 +158,7 @@ export class OpenRouterClient {
         const message = json.error.message ?? 'unknown error';
         const fatal = status ? fatalMessage(status, message, req.model) : null;
         if (fatal) throw new LlmError(fatal, true, status);
-        if (status && RETRYABLE.has(status) && attempt < this.opts.maxRetries) {
+        if (status && retryable(status, message) && attempt < this.opts.maxRetries) {
           await sleep(backoffMs(attempt++, null, status === 429), req.signal);
           continue;
         }
@@ -224,7 +227,7 @@ function fatalMessage(status: number, message: string, model: string): string | 
   if (status === 403) return `OpenRouter refused "${model}" (403): ${message}`;
   if (status === 402) return `OpenRouter says you're out of credits (402): ${message}`;
   if (status === 404) return `OpenRouter doesn't have the model "${model}" (404): ${message}`;
-  if (status === 400) return `OpenRouter rejected the request for "${model}" (400): ${message}`;
+  if (status === 400 && !PROVIDER_HICCUP.test(message)) return `OpenRouter rejected the request for "${model}" (400): ${message}`;
   if (status === 429 && /per[- ]?day|daily/i.test(message)) {
     return `OpenRouter's daily free-model limit is used up (429): ${message}`;
   }
