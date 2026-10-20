@@ -130,7 +130,8 @@ names instead.
 
 The setup in `infra/terraform` creates:
 
-- A small **EC2 instance** (Graviton `t4g.small`, about $12/month) running the app and
+- A small **EC2 instance** (Graviton `t4g.small` by default, or `t4g.micro` with 1 GB of swap
+  to save money; about $20 or $14 a month all in, counting disks and the public IPv4 address) running the app and
   `cloudflared` with Docker Compose. It has **no inbound ports**: a **Cloudflare Tunnel** carries
   traffic for `goldenballs.thekitbarnes.com`, and Cloudflare handles TLS.
 - A separate encrypted **EBS volume** for the SQLite database, so it survives instance

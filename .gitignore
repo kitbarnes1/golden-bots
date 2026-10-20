@@ -13,3 +13,9 @@ data/
 !*.tfvars.example
 .DS_Store
 coverage/
+
+# Saved Terraform plans contain secret variable values
+*.tfplan
+tfplan
+# Vite dependency cache
+.vite/
