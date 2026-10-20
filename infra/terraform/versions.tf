@@ -16,14 +16,14 @@ terraform {
     }
   }
 
-  # State holds your API keys (they're passed in as variables), so keep it
-  # somewhere private. To share it, uncomment and point at an S3 bucket you own:
-  # backend "s3" {
-  #   bucket       = "my-terraform-state"
-  #   key          = "golden-balls/terraform.tfstate"
-  #   region       = "eu-west-2"
-  #   use_lockfile = true
-  # }
+  # State holds your API keys (they're passed in as variables), so it lives in
+  # a private, versioned bucket. To use your own, change the bucket name.
+  backend "s3" {
+    bucket       = "golden-balls-tfstate-376181815265"
+    key          = "golden-balls/terraform.tfstate"
+    region       = "eu-west-2"
+    use_lockfile = true
+  }
 }
 
 provider "aws" {

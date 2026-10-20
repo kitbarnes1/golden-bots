@@ -5,9 +5,12 @@ import { GamePage } from './pages/GamePage';
 import { GamesPage } from './pages/GamesPage';
 import { HomePage } from './pages/HomePage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
+import { LoginPage } from './pages/LoginPage';
+import { AuthProvider, useAuth } from './lib/auth';
 import './styles.css';
 
 function Layout({ children }: { children: React.ReactNode }) {
+  const auth = useAuth();
   return (
     <>
       <header className="topbar">
@@ -21,6 +24,14 @@ function Layout({ children }: { children: React.ReactNode }) {
           </NavLink>
           <NavLink to="/leaderboard">Leaderboard</NavLink>
           <NavLink to="/games">Games</NavLink>
+          {auth.required &&
+            (auth.loggedIn ? (
+              <button type="button" className="topbar__logout" onClick={() => void auth.logout()}>
+                Log out
+              </button>
+            ) : (
+              <NavLink to="/login">Log in</NavLink>
+            ))}
         </nav>
       </header>
       <main>{children}</main>
@@ -43,15 +54,18 @@ function NotFound() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/game/:id" element={<GamePage />} />
-          <Route path="/games" element={<GamesPage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Layout>
+      <AuthProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/game/:id" element={<GamePage />} />
+            <Route path="/games" element={<GamesPage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Layout>
+      </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
 );

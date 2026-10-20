@@ -4,6 +4,15 @@
 set -euxo pipefail
 exec > >(tee -a /var/log/golden-balls-setup.log) 2>&1
 
+# --- Swap: headroom on small instances (a t4g.micro has 1 GB) ----------------
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=1024
+  chmod 600 /swapfile
+  mkswap /swapfile
+fi
+swapon /swapfile || true
+grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
 # --- Docker + compose plugin -------------------------------------------------
 dnf install -y docker
 systemctl enable --now docker

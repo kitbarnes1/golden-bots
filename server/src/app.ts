@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -6,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import type { CreateGameRequest, GameDetail, HumanActionRequest, ServerInfo } from '@gb/shared';
 import { canSee } from '@gb/shared';
 import { MOCK_STRATEGIES } from './agents/mock.js';
+import { AdminAuth } from './auth.js';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
 import { GameManager, HttpError, type StreamMessage } from './games/manager.js';
@@ -44,12 +44,23 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     void reply.status(status).send({ error: status >= 500 ? 'Internal server error' : message });
   });
 
+  // Behind Cloudflare, send plain-http visitors to https so the login never travels
+  // unencrypted, and tell browsers to stick to https from then on.
+  const httpsBase = cfg.publicUrl.startsWith('https://') ? cfg.publicUrl.replace(/\/+$/, '') : null;
+  app.addHook('onRequest', async (req, reply) => {
+    if (httpsBase && /"scheme":"http"/.test(String(req.headers['cf-visitor'] ?? ''))) {
+      return reply.redirect(`${httpsBase}${req.url}`, 301);
+    }
+  });
+  app.addHook('onSend', async (req, reply) => {
+    if (/"scheme":"https"/.test(String(req.headers['cf-visitor'] ?? ''))) {
+      void reply.header('strict-transport-security', 'max-age=31536000');
+    }
+  });
+
+  const auth = new AdminAuth(cfg.adminPassword);
   const requireAdmin = (req: FastifyRequest) => {
-    if (!cfg.adminPassword) return;
-    const given = String(req.headers['x-admin-key'] ?? '');
-    const a = createHash('sha256').update(given).digest();
-    const b = createHash('sha256').update(cfg.adminPassword).digest();
-    if (!timingSafeEqual(a, b)) throw new HttpError(401, 'Admin password required.');
+    if (!auth.isLoggedIn(req)) throw new HttpError(401, 'Log in to do that.');
   };
 
   const tokenOf = (req: FastifyRequest) => {
@@ -68,12 +79,26 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     mockStrategies: MOCK_STRATEGIES,
   }));
 
-  app.post('/api/admin/check', async (req) => {
-    requireAdmin(req);
+  app.get('/api/session', async (req) => {
+    const loggedIn = auth.isLoggedIn(req);
     // Someone who can start games is here: get the free models checked before they ask.
-    void catalog.checkFree();
-    return { ok: true };
+    if (loggedIn && auth.required) void catalog.checkFree();
+    return { required: auth.required, loggedIn };
   });
+
+  app.post('/api/login', async (req, reply) => {
+    const result = auth.login(req, (req.body as { password?: unknown } | undefined)?.password);
+    if (result.ok) {
+      void catalog.checkFree();
+      return reply.header('set-cookie', result.cookie).send({ ok: true });
+    }
+    // Slow down guessing scripts a little more.
+    await new Promise((r) => setTimeout(r, 400));
+    if (result.retryAfterSec) void reply.header('retry-after', String(result.retryAfterSec));
+    return reply.status(result.status).send({ error: result.error });
+  });
+
+  app.post('/api/logout', async (req, reply) => reply.header('set-cookie', auth.logoutCookie(req)).send({ ok: true }));
 
   app.get('/api/models', async () => catalog.list());
 

@@ -9,6 +9,7 @@ import { ChatBox, FloorBanner } from '../components/OpenFloor';
 import { Podium } from '../components/Podium';
 import { RoundsReview } from '../components/RoundsReview';
 import { api, ApiError, prefs } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { buildView, STAGE_LABELS } from '../lib/gameState';
 import { useGame } from '../lib/useGame';
 
@@ -24,6 +25,7 @@ function replayDelay(e: GameEvent, speed: number): number {
 export function GamePage() {
   const { id = '' } = useParams();
   const game = useGame(id);
+  const auth = useAuth();
   const { detail, events } = game;
 
   const [showThoughts, setShowThoughts] = useState(() => prefs.get('thoughts', true));
@@ -92,7 +94,7 @@ export function GamePage() {
     try {
       await api.abort(id);
     } catch (err) {
-      alert(err instanceof ApiError && err.status === 401 ? 'Unlock with the admin password on the home page first.' : String(err));
+      alert(err instanceof ApiError && err.status === 401 ? 'Your login has expired. Log in again to stop games.' : String(err));
     }
   };
 
@@ -165,7 +167,7 @@ export function GamePage() {
               )}
             </span>
           )}
-          {live && (
+          {live && auth.canAdmin && (
             <button className="btn btn--small btn--ghost" onClick={stop}>
               Stop game
             </button>

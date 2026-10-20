@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GameSummary } from '@gb/shared';
 import { GameList } from '../components/GameList';
-import { adminKey, api } from '../lib/api';
+import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 const PAGE = 30;
 
 export function GamesPage() {
+  const auth = useAuth();
   const [games, setGames] = useState<GameSummary[]>([]);
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export function GamesPage() {
       <h1>All games</h1>
       {error && <p className="error">{error}</p>}
       <section className="card">
-        <GameList games={games} {...(adminKey.get() ? { onDelete: (id: string) => void remove(id) } : {})} />
+        <GameList games={games} {...(auth.canAdmin ? { onDelete: (id: string) => void remove(id) } : {})} />
         <div className="pager">
           <button className="btn btn--small btn--ghost" disabled={offset === 0} onClick={() => setOffset((o) => Math.max(0, o - PAGE))}>
             Newer
