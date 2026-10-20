@@ -188,6 +188,10 @@ describe('API', () => {
       const replies = speeches.filter((s) => s.seq > q.seq && s.seq < closed.seq && s.seat !== seat);
       if (replies.length > 0) expect(replies.slice(0, 2).map((s) => s.seat)).toContain(q.to);
     }
+    // The leaderboard leaves humans out unless asked for.
+    const board = async (q: string) => (await app.inject(`/api/leaderboard?includeUnranked=1${q}`)).json<LeaderboardResponse>();
+    expect((await board('')).rows.some((r) => r.kind === 'human')).toBe(false);
+    expect((await board('&includeHumans=1')).rows.some((r) => r.kind === 'human')).toBe(true);
     // Chat is rejected once the game is over.
     const late = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers: { 'x-player-token': playerToken! }, payload: { text: 'hi' } });
     expect(late.statusCode).toBe(409);

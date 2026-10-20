@@ -280,7 +280,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const q = req.query as { includeUnranked?: string; includeHumans?: string };
     return db.leaderboard({
       includeUnranked: q.includeUnranked === '1' || q.includeUnranked === 'true',
-      includeHumans: q.includeHumans !== '0' && q.includeHumans !== 'false',
+      // Humans are left out unless asked for: the leaderboard is about the models.
+      includeHumans: q.includeHumans === '1' || q.includeHumans === 'true',
     });
   });
 
