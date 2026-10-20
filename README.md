@@ -91,11 +91,12 @@ All settings are environment variables (see `.env.example`).
 | `AUTOPLAY_MODELS` | featured models | Pool to draw autoplay lineups from. |
 | `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. |
 
-**What a game costs:** a game is roughly 50–90 model calls, each with a few thousand tokens of
-game transcript. Most of the variation comes from the chats, and the "most messages per chat"
-option caps it. With mid-priced models expect very roughly $0.50–$1.50 per game, a few cents with
-budget models, and nothing with `:free` models. The exact cost is tracked per move and shown
-on each game and on the leaderboard.
+**What a game costs:** in real games each AI seat used about 75,000 input tokens (every move
+sends the game so far) and 4,000 output tokens; about half of that is the chats, which the chat
+options control. A table of mid-priced models comes to roughly $0.20–$0.40, budget models to a few
+cents, and `:free` models to nothing. **Set up a game** shows an estimate for the lineup and options
+you've chosen, per seat and in total. The exact cost is tracked per move and shown on each game
+and on the leaderboard.
 
 ## How the AI contestants play
 

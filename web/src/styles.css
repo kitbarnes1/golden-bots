@@ -1838,3 +1838,11 @@ textarea {
 .compare__row span {
   color: var(--text-2);
 }
+.newgame__cost {
+  margin: 4px 0 12px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.newgame__cost strong {
+  color: var(--text);
+}
