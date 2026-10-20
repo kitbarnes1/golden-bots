@@ -8,27 +8,34 @@ function secondsLeft(endsAt: number, skewMs: number): number {
   return Math.max(0, Math.ceil((endsAt - (Date.now() + skewMs)) / 1000));
 }
 
-function useSecondsLeft(endsAt: number, skewMs: number): number {
+/** stoppedAt = when the game was paused (server clock): the chat clock stands still from then until it resumes. */
+function useSecondsLeft(endsAt: number, skewMs: number, stoppedAt?: number): number {
   const [left, setLeft] = useState(() => secondsLeft(endsAt, skewMs));
   useEffect(() => {
+    if (stoppedAt !== undefined) {
+      setLeft(Math.max(0, Math.ceil((endsAt - stoppedAt) / 1000)));
+      return;
+    }
     setLeft(secondsLeft(endsAt, skewMs));
     const t = setInterval(() => setLeft(secondsLeft(endsAt, skewMs)), 250);
     return () => clearInterval(t);
-  }, [endsAt, skewMs]);
+  }, [endsAt, skewMs, stoppedAt]);
   return left;
 }
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 /** "Open floor · 0:42 left" banner shown to everyone while contestants talk. */
-export function FloorBanner({ floor, skewMs, live }: { floor: FloorView; skewMs: number; live: boolean }) {
-  const left = useSecondsLeft(floor.endsAt, skewMs);
+export function FloorBanner({ floor, skewMs, live, stoppedAt }: { floor: FloorView; skewMs: number; live: boolean; stoppedAt?: number }) {
+  const left = useSecondsLeft(floor.endsAt, skewMs, stoppedAt);
   const label = floor.stage === 'final' ? 'Split or Steal talks' : floor.reflect ? 'After the vote' : 'Open floor';
   return (
     <div className="floor-banner" role="status">
       <span className="floor-banner__dot" aria-hidden />
       <strong>{label}</strong>
-      {live && <span className="floor-banner__time">{left > 0 ? `${mmss(left)} left` : 'Last words…'}</span>}
+      {live && (
+        <span className="floor-banner__time">{stoppedAt !== undefined ? `${mmss(left)} left, paused` : left > 0 ? `${mmss(left)} left` : 'Last words…'}</span>
+      )}
       <span className="floor-banner__count">
         {floor.messages} message{floor.messages === 1 ? '' : 's'}
       </span>
@@ -42,16 +49,18 @@ interface ChatBoxProps {
   mySeat: number;
   players: PlayerInfo[];
   skewMs: number;
+  /** Set while the game is paused: the clock stands still. */
+  stoppedAt?: number;
 }
 
 /** Lets a human contestant join the conversation at any time while the floor is open. */
-export function ChatBox({ gameId, floor, mySeat, players, skewMs }: ChatBoxProps) {
+export function ChatBox({ gameId, floor, mySeat, players, skewMs, stoppedAt }: ChatBoxProps) {
   const [text, setText] = useState('');
   const [to, setTo] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const left = useSecondsLeft(floor.endsAt, skewMs);
+  const left = useSecondsLeft(floor.endsAt, skewMs, stoppedAt);
   const others = floor.participants.filter((s) => s !== mySeat);
 
   // A new conversation starts fresh.
@@ -92,7 +101,7 @@ export function ChatBox({ gameId, floor, mySeat, players, skewMs }: ChatBoxProps
     <section className="action chatbox" aria-label="Join the conversation">
       <div className="chatbox__head">
         <span className="action__title">Your say</span>
-        <span className="chatbox__time">{left > 0 ? `${mmss(left)} left` : 'Time is up'}</span>
+        <span className="chatbox__time">{stoppedAt !== undefined ? `${mmss(left)} left, paused` : left > 0 ? `${mmss(left)} left` : 'Time is up'}</span>
       </div>
       {done ? (
         <p className="muted">

@@ -719,6 +719,11 @@ textarea {
   gap: 8px;
   margin-bottom: 8px;
 }
+.newgame__pace {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
 .newgame__options {
   margin: 8px 0 4px;
   border-top: 1px solid var(--line);
@@ -1519,6 +1524,29 @@ textarea {
 }
 .feed__small {
   font-size: 0.8rem;
+}
+/* Reading at your own pace: stays in view at the bottom of the feed, under the newest line. */
+.feed__footer {
+  position: sticky;
+  bottom: -12px;
+  margin: auto -12px -12px;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border-top: 1px solid var(--line-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.feed__footer kbd {
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  margin-left: 4px;
+  border: 1px solid rgba(36, 26, 0, 0.4);
+  border-radius: 4px;
 }
 .feed__typing {
   color: var(--muted);

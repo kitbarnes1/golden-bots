@@ -6,6 +6,7 @@ import type {
   FinalOutcome,
   GameEvent,
   GameOptions,
+  PauseReason,
   Payout,
   PlayerInfo,
 } from '@gb/shared';
@@ -74,8 +75,8 @@ export interface GameView {
   awaiting?: { seat: number; requestId: string; request: ActionRequest };
   payouts?: Payout[];
   error?: string;
-  /** Seat of the human everyone is waiting for, while the game is paused. */
-  pausedFor?: number;
+  /** While the game is paused: the human everyone is waiting for, and why (away, or reading at their own pace). */
+  pause?: { seat: number; reason: PauseReason; seq: number; since: number };
 }
 
 export function emptyView(): GameView {
@@ -237,14 +238,14 @@ function apply(v: GameView, e: GameEvent): void {
     case 'game_error':
       v.error = e.message;
       v.awaiting = undefined;
-      v.pausedFor = undefined;
+      v.pause = undefined;
       break;
     case 'paused':
-      v.pausedFor = e.seat;
+      v.pause = { seat: e.seat, reason: e.reason ?? 'away', seq: e.seq, since: e.ts };
       break;
     case 'resumed':
-      v.pausedFor = undefined;
-      // The chat clock stopped while they were away.
+      v.pause = undefined;
+      // The chat clock stopped while the game was paused.
       if (v.floor) v.floor.endsAt += e.pausedMs;
       break;
     default:

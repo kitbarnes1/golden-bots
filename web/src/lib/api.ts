@@ -90,6 +90,12 @@ export const api = {
       method: 'POST',
       headers: { 'x-player-token': playerToken.get(id) ?? '' },
     }),
+  /** Reading at my own pace: I've read it, carry on. */
+  continueReading: (id: string) =>
+    request<{ ok: true }>(`/api/games/${id}/continue`, {
+      method: 'POST',
+      headers: { 'x-player-token': playerToken.get(id) ?? '' },
+    }),
   abort: (id: string) => request<{ ok: true }>(`/api/games/${id}/abort`, { method: 'POST' }),
   remove: (id: string) => request<{ ok: true }>(`/api/games/${id}`, { method: 'DELETE' }),
   leaderboard: (opts: { includeUnranked: boolean; includeHumans: boolean }) =>

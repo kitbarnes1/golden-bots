@@ -11,6 +11,8 @@ interface Props {
   viewerSeat?: number;
   /** Who's working on a move right now (live games only). */
   activity?: { seats: number[]; action: string | null };
+  /** Pinned to the bottom of the feed, under the newest line (the Continue button when reading at your own pace). */
+  footer?: ReactNode;
 }
 
 const CHAT_END_TEXT = {
@@ -29,7 +31,7 @@ const ACTION_LABELS: Record<string, string> = {
   final_choice: 'choosing split or steal',
 };
 
-export function Feed({ events, players, showThoughts, reveal, viewerSeat, activity }: Props) {
+export function Feed({ events, players, showThoughts, reveal, viewerSeat, activity, footer }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -37,7 +39,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
   useEffect(() => {
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [events.length, showThoughts, activity?.seats.length]);
+  }, [events.length, showThoughts, activity?.seats.length, !footer]);
 
   const backRows = new Map<string, BallT[]>();
   for (const e of events) if (e.type === 'back_row') backRows.set(`${e.stage}:${e.seat}`, e.back);
@@ -50,7 +52,12 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
     </span>
   );
 
+  // Who's working on a move, leaving out the viewer: they know it's their go.
+  const busy = (activity?.seats ?? []).filter((s) => s !== viewerSeat);
+
   const items: ReactNode[] = [];
+  // Pauses for the player to read at their own pace aren't news; only the ones for being away get a line.
+  let reading = false;
   for (const e of events) {
     const key = e.seq;
     switch (e.type) {
@@ -280,6 +287,8 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         );
         break;
       case 'paused':
+        reading = e.reason === 'reading';
+        if (reading) break;
         items.push(
           <div key={key} className="feed__muted">
             Paused while {who(e.seat)} is away.
@@ -287,6 +296,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         );
         break;
       case 'resumed':
+        if (reading) break;
         items.push(
           <div key={key} className="feed__muted">
             {who(e.seat)} is back after {Math.max(1, Math.round(e.pausedMs / 1000))}s. Play on.
@@ -309,15 +319,20 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
       aria-live="polite"
     >
       {items}
-      {activity && activity.seats.length > 0 && (
+      {busy.length > 0 && (
         <div className="feed__typing" aria-live="off">
-          {activity.seats.map((s) => name(s)).join(', ')} {activity.seats.length === 1 ? 'is' : 'are'}{' '}
-          {activity.action === 'chat' ? 'typing' : 'thinking'}
+          {busy.map((s) => name(s)).join(', ')} {busy.length === 1 ? 'is' : 'are'}{' '}
+          {activity?.action === 'chat' ? 'typing' : 'thinking'}
           <span className="feed__dots" aria-hidden>
             <span />
             <span />
             <span />
           </span>
+        </div>
+      )}
+      {footer && (
+        <div className="feed__footer" aria-live="off">
+          {footer}
         </div>
       )}
     </div>

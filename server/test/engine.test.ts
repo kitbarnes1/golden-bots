@@ -199,6 +199,51 @@ describe('GameEngine', () => {
     expect(events.at(-1)!.type).toBe('game_over');
   });
 
+  it('waits for a human reading at their own pace after each thing an AI says', async () => {
+    const run = async (seed: number, readAtMyPace: boolean) => {
+      const events: GameEvent[] = [];
+      const backFromAway: boolean[] = [];
+      let engine: GameEngine | undefined;
+      // Seat 0 is a person who stays quiet in the chats and clicks Continue as soon as they can.
+      const mock = new MockAgent('mock/honest', 0);
+      const reader: Agent = { interactive: true, act: (req, ctx, meta) => mock.act(req, ctx, meta) };
+      engine = new GameEngine({
+        players,
+        agents: [reader, ...players.slice(1).map((p) => new MockAgent('mock/chaos', seed + p.seat))],
+        options: options(seed, { chatSeconds: 2, finalChatSeconds: 2, reflectSeconds: 1, readAtMyPace }),
+        emit: (e) => {
+          events.push(e);
+          if (e.type === 'paused') {
+            setTimeout(() => {
+              backFromAway.push(engine!.resume('away'));
+              engine!.resume('reading');
+            }, 1);
+          }
+          if (e.type === 'chat_started' && e.participants.includes(0)) setTimeout(() => engine!.doneTalking(0), 1);
+        },
+      });
+      await engine.run();
+      return { events, backFromAway };
+    };
+
+    const { events, backFromAway } = await run(51, true);
+    expect(events.at(-1)!.type).toBe('game_over');
+    const out = ofType(events, 'eliminated').find((e) => e.seat === 0)?.seq ?? Infinity;
+    const said = events.filter(
+      (e) => e.seq < out && (e.type === 'claim' || e.type === 'speech' || (e.type === 'ball_picked' && e.say)) && e.seat !== 0,
+    );
+    expect(said.length).toBeGreaterThan(3);
+    // Every AI claim, line of chat and remark is followed by a pause for seat 0 to read it...
+    for (const e of said) expect(events[e.seq + 1]).toMatchObject({ type: 'paused', seat: 0, reason: 'reading' });
+    // ...and nothing else is: not the human's own words, and not once they're out.
+    expect(ofType(events, 'paused')).toHaveLength(said.length);
+    // Coming back to the page doesn't count as having read on.
+    expect(backFromAway.every((b) => b === false)).toBe(true);
+
+    const fast = await run(51, false);
+    expect(fast.events.some((e) => e.type === 'paused')).toBe(false);
+  });
+
   it('lets the finalists react after the reveal, whoever was stolen from first', async () => {
     const prompts: string[] = [];
     const voteHigh: Script = (req) => (req.kind === 'vote' ? { target: Math.max(...req.candidates) } : undefined);

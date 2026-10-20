@@ -38,6 +38,8 @@ export interface GameOptions {
   chatMaxMessages: number;
   /** If true, AI contestants are named after their model; otherwise they get show-style first names. */
   revealModelNames: boolean;
+  /** With a human seated: after each thing an AI says, wait for them to click Continue. */
+  readAtMyPace: boolean;
   /** Native reasoning effort. 'none' turns it off, or as low as the model allows. */
   reasoningEffort: 'none' | 'low' | 'medium' | 'high';
   /** Seed for the ball machine, for reproducible games. */
@@ -51,6 +53,7 @@ export const DEFAULT_OPTIONS: Omit<GameOptions, 'seed'> = {
   chatMaxMessages: 12,
   revealModelNames: true,
   reasoningEffort: 'none',
+  readAtMyPace: true,
 };
 
 export type BinOrWin = 'bin' | 'win';

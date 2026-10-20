@@ -18,6 +18,7 @@ import {
   type GameOptions,
   type LiveStatus,
   type Payout,
+  type PauseReason,
   type PlayerInfo,
   type Stage,
   type Usage,
@@ -158,7 +159,7 @@ export class GameEngine {
   /** The conversation in progress, if any. */
   private floor?: Floor;
   /** Set while a human player is away; moves wait until they're back. */
-  private paused: { since: number; seat: number; waiters: (() => void)[] } | null = null;
+  private paused: { since: number; seat: number; reason: PauseReason; waiters: (() => void)[] } | null = null;
 
   constructor(private readonly deps: EngineDeps) {
     if (deps.players.length !== 4 || deps.agents.length !== 4) {
@@ -215,24 +216,38 @@ export class GameEngine {
    * Hold the game while the human in `seat` is away. A move already being made
    * finishes; nothing new starts, and the chat and move clocks stop.
    */
-  pause(seat: number): void {
+  pause(seat: number, reason: PauseReason = 'away'): void {
     if (this.paused || this.events.at(-1)?.type === 'game_over') return;
-    this.paused = { since: Date.now(), seat, waiters: [] };
+    this.paused = { since: Date.now(), seat, reason, waiters: [] };
     for (const s of this.seats) s.agent.pause?.();
-    this.push({ type: 'paused', seat });
+    this.push({ type: 'paused', seat, reason });
     // An open floor waiting on the human re-checks straight away and stops.
     this.floor?.wake?.();
   }
 
-  resume(): void {
+  /** Carry on. With a reason, only a pause for that reason ends (coming back to the page doesn't skip reading). */
+  resume(reason?: PauseReason): boolean {
     const p = this.paused;
-    if (!p) return;
+    if (!p || (reason && p.reason !== reason)) return false;
     this.paused = null;
     const pausedMs = Date.now() - p.since;
     if (this.floor) this.floor.endsAt += pausedMs;
     for (const s of this.seats) s.agent.resume?.();
     this.push({ type: 'resumed', seat: p.seat, pausedMs });
     for (const wake of p.waiters) wake();
+    return true;
+  }
+
+  /**
+   * "Read at my own pace": after an AI says something, wait for the human
+   * still in the game to click Continue. The clocks stop meanwhile.
+   */
+  private async letHumanRead(): Promise<void> {
+    if (!this.deps.options.readAtMyPace) return;
+    const reader = this.seats.find((s) => s.active && s.agent.interactive);
+    if (!reader || this.paused) return;
+    this.pause(reader.info.seat, 'reading');
+    await this.whilePaused();
   }
 
   private async whilePaused(): Promise<void> {
@@ -314,6 +329,7 @@ export class GameEngine {
       s.stats.claims++;
       if (claimIsTruthful(res.claim, s.back)) s.stats.truthfulClaims++;
       this.push({ type: 'claim', stage, seat, claim: res.claim, say: res.say });
+      if (!this.isHuman(seat)) await this.letHumanRead();
     }
 
     // Open floor: a timed free-for-all conversation before the vote.
@@ -500,6 +516,7 @@ export class GameEngine {
       jackpot: board.jackpot,
       ...(res.kind === 'pick' && res.say ? { say: res.say } : {}),
     });
+    if (res.kind === 'pick' && res.say && !this.isHuman(seat)) await this.letHumanRead();
   }
 
   private async splitOrSteal(jackpot: number): Promise<Payout[]> {
@@ -669,6 +686,7 @@ export class GameEngine {
         const repeat = say !== null && !answeringHuman && isRepeat(floor.said.get(next) ?? [], say);
         if (res.kind === 'chat' && say && !repeat) {
           this.recordChat(floor, next, say, res.to);
+          await this.letHumanRead();
         } else {
           floor.passed.add(next);
           floor.owed.delete(next);
@@ -748,7 +766,8 @@ export class GameEngine {
   /** A human contestant posts into the open floor (any time while it's open). */
   postChat(seat: number, text: string, to: number | null): { ok: true } | { ok: false; error: string } {
     const floor = this.floor;
-    if (!floor || Date.now() >= floor.endsAt) return { ok: false, error: 'The floor is closed.' };
+    // While paused the floor's clock is stopped, so it can't have run out.
+    if (!floor || (!this.paused && Date.now() >= floor.endsAt)) return { ok: false, error: 'The floor is closed.' };
     if (!floor.participants.includes(seat) || !this.isHuman(seat)) {
       return { ok: false, error: "You're not part of this conversation." };
     }
@@ -759,6 +778,8 @@ export class GameEngine {
     floor.lastHumanPost.set(seat, Date.now());
     floor.humansDone.delete(seat);
     this.recordChat(floor, seat, say, to);
+    // Replying counts as having read what came before.
+    this.resume('reading');
     return { ok: true };
   }
 
@@ -768,6 +789,8 @@ export class GameEngine {
     if (!floor || !floor.participants.includes(seat)) return { ok: false, error: 'The floor is closed.' };
     floor.humansDone.add(seat);
     floor.wake?.();
+    // Saying you're done counts as having read what came before.
+    this.resume('reading');
     return { ok: true };
   }
 
@@ -781,6 +804,7 @@ export class GameEngine {
     const res = await this.ask(seat, request);
     if (res.kind === 'speak' && res.say) {
       this.push({ type: 'speech', stage: request.stage, seat, say: res.say });
+      if (!this.isHuman(seat)) await this.letHumanRead();
     }
   }
 

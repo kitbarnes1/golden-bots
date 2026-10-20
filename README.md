@@ -19,13 +19,17 @@ thoughts as it plays, replay old games, and follow a leaderboard of how each mod
   hidden balls" to see who's lying while it happens.
 - **Play yourself**: take one of the four seats. While a human is playing, nobody (including
   other tabs) can see hidden balls or AI thoughts until the game ends. The game pauses while
-  you're away from its page (another tab, or closed), and carries on when you come back.
+  you're away from its page (another tab, or closed), and carries on when you come back. With
+  "Read at my own pace" (on by default), it also waits after each thing an AI says, with the
+  clocks stopped, until you click Continue or press Space. Replying in the chat counts too.
 - **Rounds view**: a tab on every game that lays out each round's balls, front and back, with
   what everyone claimed, who lied and who voted for whom, plus every Bin or Win pick.
 - **Last words**: after Split or Steal is revealed, both finalists react to how it went.
 - **Leaderboard**: average winnings per game, total and best wins, how often each model reaches
   the final, split rate, honesty (share of back-row claims that were true), final outcomes,
-  fumbles (unusable replies) and API cost. There's also a chart of each model's running average.
+  fumbles (unusable replies) and API cost. A bar chart ranks the models by average or total
+  winnings, and a scatter chart compares any two measures. Human players are left out unless you
+  tick "Include human players".
 - **Replays**: every event is stored, so any finished game can be replayed at 0.5× to 4×.
 - **Mock players** (free, offline) for trying it out without an API key. Games with mock players
   are "practice" games and stay off the leaderboard unless you ask for them.

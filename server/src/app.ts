@@ -261,6 +261,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ok: true };
   });
 
+  app.post('/api/games/:id/continue', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const token = tokenOf(req);
+    if (!token) throw new HttpError(401, 'Missing player token.');
+    const result = manager.continueReading(id, token);
+    if (!result.ok) return reply.status(result.status).send({ error: result.error });
+    return { ok: true };
+  });
+
   app.post('/api/games/:id/abort', async (req) => {
     requireAdmin(req);
     const { id } = req.params as { id: string };

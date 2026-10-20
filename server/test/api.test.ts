@@ -128,10 +128,24 @@ describe('API', () => {
     expect(spectator.events.every((e) => e.vis === 'public')).toBe(true);
 
     let moves = 0;
+    let reads = 0;
     const chatsJoined = new Set<number>();
+    const headers = { 'x-player-token': playerToken! };
     while (manager.isRunning(id)) {
       const me = await getGame(id, playerToken);
       expect(me.viewer.seat).toBe(seat);
+      // Reading at our own pace (on by default): the game waits until we click Continue.
+      const hold = me.events.findLast((e) => e.type === 'paused' || e.type === 'resumed');
+      if (hold?.type === 'paused' && hold.reason === 'reading') {
+        if (reads === 0) {
+          const stranger = await app.inject({ method: 'POST', url: `/api/games/${id}/continue`, headers: { 'x-player-token': 'nope' } });
+          expect(stranger.statusCode).toBe(400);
+        }
+        const read = await app.inject({ method: 'POST', url: `/api/games/${id}/continue`, headers });
+        expect(read.statusCode, read.body).toBe(200);
+        reads++;
+        continue;
+      }
       // While still in, the human sees their own back row but nobody else's, and no thoughts.
       if (!me.events.some((e) => e.type === 'eliminated' && e.seat === seat)) {
         for (const e of me.events) {
@@ -144,7 +158,6 @@ describe('API', () => {
       if (opened?.type === 'chat_started' && opened.participants.includes(seat!) && !chatsJoined.has(opened.seq)) {
         chatsJoined.add(opened.seq);
         const ai = opened.participants.find((s) => s !== seat)!;
-        const headers = { 'x-player-token': playerToken! };
         const said = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers, payload: { text: 'What is really on your back row?', to: ai } });
         expect(said.statusCode, said.body).toBe(200);
         const done = await app.inject({ method: 'POST', url: `/api/games/${id}/chat/done`, headers });
@@ -171,6 +184,9 @@ describe('API', () => {
       moves++;
     }
     expect(moves).toBeGreaterThanOrEqual(2); // at least a claim and a vote
+    expect(reads).toBeGreaterThanOrEqual(3); // at least the other three claims
+    // Nothing to read once it's over.
+    expect((await app.inject({ method: 'POST', url: `/api/games/${id}/continue`, headers })).statusCode).toBe(409);
     expect(chatsJoined.size).toBeGreaterThanOrEqual(1);
 
     const after = await getGame(id);
@@ -211,7 +227,7 @@ describe('API', () => {
         url: '/api/games',
         payload: {
           seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))],
-          options: { chatSeconds: 0, finalChatSeconds: 0, seed },
+          options: { chatSeconds: 0, finalChatSeconds: 0, readAtMyPace: false, seed },
         },
       });
       const { id, playerToken, seat } = res.json<CreateGameResponse>();
@@ -256,7 +272,10 @@ describe('API', () => {
       await app.inject({
         method: 'POST',
         url: '/api/games',
-        payload: { seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))] },
+        payload: {
+          seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))],
+          options: { readAtMyPace: false },
+        },
       })
     ).json<CreateGameResponse>();
     const detail = await waitForAwaiting(id, playerToken!);
