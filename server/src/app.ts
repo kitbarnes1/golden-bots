@@ -6,6 +6,7 @@ import type { CreateGameRequest, GameDetail, HumanActionRequest, ServerInfo } fr
 import { canSee } from '@gb/shared';
 import { MOCK_STRATEGIES } from './agents/mock.js';
 import { AdminAuth } from './auth.js';
+import { clientIp, RequestLimiter, type LimitOptions } from './limits.js';
 import type { Config } from './config.js';
 import type { Db } from './db.js';
 import { GameManager, HttpError, type StreamMessage } from './games/manager.js';
@@ -18,7 +19,33 @@ export interface AppDeps {
   catalog: ModelCatalog;
   hasOpenRouterKey: boolean;
   logger?: boolean | object;
+  /** Request and stream caps (tests use small ones). */
+  limits?: LimitOptions;
 }
+
+/**
+ * Browser-side defences. The page loads only its own script (no inline code),
+ * so script-src can be strict; styles allow inline for React's style attributes,
+ * plus Google Fonts.
+ */
+const SECURITY_HEADERS = {
+  'content-security-policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; '),
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+};
 
 const HEARTBEAT_MS = 15_000;
 
@@ -55,6 +82,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.addHook('onSend', async (req, reply) => {
     if (/"scheme":"https"/.test(String(req.headers['cf-visitor'] ?? ''))) {
       void reply.header('strict-transport-security', 'max-age=31536000');
+    }
+    void reply.headers(SECURITY_HEADERS);
+  });
+
+  // One busy or hostile client shouldn't be able to swamp a small server.
+  const limiter = new RequestLimiter(deps.limits);
+  app.addHook('onRequest', async (req, reply) => {
+    if (req.url.startsWith('/api/') && !limiter.allow(clientIp(req))) {
+      return reply.status(429).header('retry-after', '60').send({ error: 'Too many requests. Try again in a minute.' });
     }
   });
 
@@ -137,6 +173,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const lastEventId = Number(req.headers['last-event-id']);
     const after = Number.isFinite(lastEventId) ? lastEventId : Number(q.after ?? -1);
     const viewer = manager.viewerFor(id, tokenOf(req));
+    const release = limiter.openStream(clientIp(req));
+    if (!release) {
+      return reply.status(429).header('retry-after', '60').send({ error: 'Too many live streams open. Close some tabs and try again.' });
+    }
 
     reply.hijack();
     const res = reply.raw;
@@ -161,6 +201,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const cleanup = () => {
       clearInterval(heartbeat);
       unsubscribe?.();
+      release();
     };
     req.raw.on('close', cleanup);
 

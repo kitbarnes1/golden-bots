@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatMoney, type LeaderboardResponse, type LeaderboardRow } from '@gb/shared';
+import { CompareChart } from '../components/CompareChart';
 import { TrendChart } from '../components/TrendChart';
 import { api, prefs } from '../lib/api';
 
@@ -139,6 +140,16 @@ export function LeaderboardPage() {
               row below to compare someone else.
             </p>
             <TrendChart history={data.history} labels={labels} highlight={selected} />
+          </section>
+
+          <section className="card">
+            <div className="card__head">
+              <h2>Compare models</h2>
+            </div>
+            <p className="muted small">
+              Each dot is a contestant. Pick what goes across and up, for example honesty against winnings: does lying pay?
+            </p>
+            <CompareChart rows={data.rows} highlight={selected} onSelect={setHighlight} />
           </section>
 
           <section className="card table-card">

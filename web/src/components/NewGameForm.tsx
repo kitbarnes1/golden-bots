@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { DEFAULT_OPTIONS, type GameOptions, type ModelOption, type SeatSpec, type ServerInfo } from '@gb/shared';
+import {
+  DEFAULT_OPTIONS,
+  ESTIMATE_RANGE,
+  estimateSeatCost,
+  formatUsd,
+  type GameOptions,
+  type ModelOption,
+  type SeatSpec,
+  type ServerInfo,
+} from '@gb/shared';
 import { api, ApiError, playerToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ModelPicker, type PriceTier } from './ModelPicker';
@@ -11,13 +20,37 @@ interface SeatDraft {
   name: string;
 }
 
-function describe(m: ModelOption | undefined): string {
+function describe(m: ModelOption | undefined, perGame: number | null): string {
   if (!m) return '';
   if (m.free) return 'Free (rate-limited)';
   if (m.promptPrice !== undefined && m.completionPrice !== undefined) {
-    return `$${m.promptPrice.toFixed(2)} in / $${m.completionPrice.toFixed(2)} out per 1M tokens`;
+    const price = `$${m.promptPrice.toFixed(2)} in / $${m.completionPrice.toFixed(2)} out per 1M tokens`;
+    return perGame === null ? price : `about ${formatUsd(perGame)} a game · ${price}`;
   }
   return '';
+}
+
+/** The likely cost of the whole table, from each AI seat's model price and real games' token use. */
+function TableCost({ costs, unknown }: { costs: number[]; unknown: number }) {
+  if (!costs.length && !unknown) return null;
+  const total = costs.reduce((a, c) => a + c, 0);
+  const priced = costs.length > 0;
+  const range =
+    total > 0 ? ` (likely ${formatUsd(total * ESTIMATE_RANGE.low)} to ${formatUsd(total * ESTIMATE_RANGE.high)})` : '';
+  return (
+    <p className="newgame__cost" title="From each model's OpenRouter price and the tokens a seat used in real games. Long chats, reasoning and finalists' extra moves push it up.">
+      {priced && total === 0 && !unknown ? (
+        <>
+          <strong>Free:</strong> every AI seat is a free model.
+        </>
+      ) : (
+        <>
+          <strong>Estimated cost:</strong> {priced ? `about ${formatUsd(total)}${range}` : 'unknown'}
+          {unknown > 0 && `, plus ${unknown} seat${unknown === 1 ? '' : 's'} with no known price`}.
+        </>
+      )}
+    </p>
+  );
 }
 
 function shuffled<T>(items: T[]): T[] {
@@ -87,6 +120,8 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
   const update = (i: number, patch: Partial<SeatDraft>) =>
     setSeats((prev) => prev!.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const hasHuman = seats.some((s) => s.kind === 'human');
+  const aiCosts = seats.filter((s) => s.kind === 'ai' && s.model.trim()).map((s) => estimateSeatCost(all.find((m) => m.id === s.model), options));
+  const knownCosts = aiCosts.filter((c): c is number => c !== null);
 
   const applyLineup = (pool: ModelOption[]) => {
     const picks = lineup(pool);
@@ -188,7 +223,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
                     tier={tier}
                     onTier={setTier}
                   />
-                  <small>{model ? describe(model) : seat.model ? 'Custom model id' : ''}</small>
+                  <small>{model ? describe(model, estimateSeatCost(model, options)) : seat.model ? 'Custom model id (no known price)' : ''}</small>
                 </div>
               )}
               {seat.kind === 'human' && (
@@ -298,6 +333,8 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
           </label>
         </div>
       </details>
+
+      <TableCost costs={knownCosts} unknown={aiCosts.length - knownCosts.length} />
 
       {auth.required === null ? null : !auth.canAdmin ? (
         <div className="newgame__login">

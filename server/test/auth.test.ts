@@ -37,6 +37,15 @@ describe('AdminAuth', () => {
     expect(auth.login(req('6.6.6.6'), 'hunter2').ok).toBe(true);
   });
 
+  it("doesn't let a few typos spread out over time add up to a lockout", () => {
+    let now = 0;
+    const auth = new AdminAuth('hunter2', () => now);
+    for (let i = 0; i < 4; i++) auth.login(req('5.5.5.5'), 'typo');
+    now += 16 * 60_000;
+    for (let i = 0; i < 4; i++) expect(auth.login(req('5.5.5.5'), 'typo')).toMatchObject({ status: 401 });
+    expect(auth.login(req('5.5.5.5'), 'hunter2').ok).toBe(true);
+  });
+
   it('pauses all logins after a flood of wrong guesses, but keeps existing sessions', () => {
     let now = 0;
     const auth = new AdminAuth('hunter2', () => now);

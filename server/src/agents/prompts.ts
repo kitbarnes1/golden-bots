@@ -34,7 +34,8 @@ HOW THE GAME WORKS
 
 THINGS TO KNOW
 - Eliminated players' balls leave the game, so who you vote out shapes how much money reaches the final. KILLERs reduce the jackpot.
-- Players who seem to hold Killers or little cash are the ones who usually get voted off, because they drag the prize down. That's why bluffs on the show make a back row sound better than it is, not worse.
+- Votes usually go against players who seem to hold KILLERs or little cash: keeping them means less money and more KILLERs later on. That's why bluffs on the show make a back row sound better than it is, not worse.
+- Big cash claims are good news for everyone's prize if they're true, so the question to ask about them is whether they're believable. Most of the Golden Bank is small change: of its 100 balls, 53 are under £1,000 and only 9 are £20,000 or more (just one each of £30,000, £40,000, £50,000, £60,000 and £75,000). Someone caught lying at a reveal has given you a reason not to trust them.
 - Bluffing about your back row is allowed and is part of the show. So is honesty. Your strategy is up to you.
 - Your goal is to leave with as much money as possible.
 
@@ -174,24 +175,26 @@ function situation(ctx: AgentContext): string {
     lines.push(`Jackpot so far: ${formatMoney(ctx.board.jackpot)}, shared by you and ${others} until Split or Steal.`);
   }
   if (ctx.stage === 'final' && ctx.jackpot !== undefined) {
-    lines.push(`The jackpot is ${formatMoney(ctx.jackpot)}.`);
+    lines.push(
+      `Bin or Win is over and no balls are in play any more. All that matters now is the ${formatMoney(ctx.jackpot)} jackpot and whether you each choose SPLIT or STEAL.`,
+    );
   }
   return lines.join('\n');
 }
 
 /**
- * What's still in the Bin or Win machine. Every finalist ball has been seen by
- * now (front rows, and back rows revealed after the vote), so it can be listed
- * exactly; models lose track when left to work it out from the transcript.
+ * What's in (or about to go into) the Bin or Win machine. Every finalist ball
+ * has been seen by then (front rows, and back rows revealed after the vote), so
+ * it can be listed exactly; models lose track when left to work it out.
  */
-function machineContents(ctx: AgentContext): string | null {
+function machineBalls(ctx: AgentContext): { list: string; killers: number; count: number } | null {
   const dealt = ctx.events.findLast(
     (e): e is Extract<GameEvent, { type: 'round_started' }> => e.type === 'round_started' && e.stage === 'r2',
   );
   const revealed = ctx.events.findLast(
     (e): e is Extract<GameEvent, { type: 'back_rows_revealed' }> => e.type === 'back_rows_revealed' && e.stage === 'r2',
   );
-  if (!dealt || !revealed || !ctx.board) return null;
+  if (!dealt || !revealed) return null;
   const key = (b: Ball) => (b.kind === 'killer' ? 'killer' : String(b.value));
   const left = new Map<string, number>();
   const add = (b: Ball, n: number) => left.set(key(b), (left.get(key(b)) ?? 0) + n);
@@ -200,18 +203,38 @@ function machineContents(ctx: AgentContext): string | null {
     for (const b of revealed.rows.find((r) => r.seat === seat)?.back ?? []) add(b, 1);
   }
   left.set('killer', (left.get('killer') ?? 0) + RULES.bow.extraKillers);
-  for (const b of [...ctx.board.won, ...ctx.board.binned]) add(b, -1);
-  const open = ctx.board.slots.filter((b) => b === null).length;
-  const listed = [...left.values()].reduce((sum, n) => sum + Math.max(0, n), 0);
-  if (listed !== open) return null; // Shouldn't happen; better silent than wrong.
+  for (const b of [...(ctx.board?.won ?? []), ...(ctx.board?.binned ?? [])]) add(b, -1);
+  const count = [...left.values()].reduce((sum, n) => sum + Math.max(0, n), 0);
+  const expected = ctx.board ? ctx.board.slots.filter((b) => b === null).length : count;
+  if (count !== expected) return null; // Shouldn't happen; better silent than wrong.
   const killers = left.get('killer') ?? 0;
   const cash = [...left.entries()]
     .filter(([k, n]) => k !== 'killer' && n > 0)
     .flatMap(([k, n]) => Array.from({ length: n }, () => Number(k)))
     .sort((a, b) => a - b)
     .map((v) => formatMoney(v));
-  const parts = [...cash, ...(killers > 0 ? [`${killers} KILLER${killers === 1 ? '' : 's'}`] : [])];
-  return `Everyone has seen every ball by now, so you know what's still in the machine, just not which ball is which: ${describeList(parts)} (${killers} KILLER${killers === 1 ? '' : 's'} among ${open} balls).`;
+  const list = describeList([...cash, ...(killers > 0 ? [`${killers} KILLER${killers === 1 ? '' : 's'}`] : [])]);
+  return { list, killers, count };
+}
+
+const killerCount = (n: number) => `${n} KILLER${n === 1 ? '' : 's'}`;
+
+function machineContents(ctx: AgentContext): string | null {
+  const m = machineBalls(ctx);
+  return m
+    ? `Everyone has seen every ball by now, so you know what's still in the machine, just not which ball is which: ${m.list} (${killerCount(m.killers)} among ${m.count} balls).`
+    : null;
+}
+
+/** What the chat after a vote is for, and what comes next. */
+function afterVote(ctx: AgentContext): string {
+  if (ctx.stage !== 'r2') {
+    return "The vote is over and everyone's back row has been revealed. React to that: who was lying, and who you trust now. In Round 2 everyone's balls go back in the machine with some new ones and fresh hands are dealt, so this round's balls won't be yours any more.";
+  }
+  const other = describeList(ctx.activeSeats.filter((s) => s !== ctx.seat).map((s) => name(ctx.players, s)));
+  const m = machineBalls(ctx);
+  const inside = m ? ` It will hold ${m.list} (${killerCount(m.killers)} among ${m.count} balls).` : '';
+  return `The vote is over: you and ${other} are the finalists. Next comes Bin or Win, which is pure luck: all your balls plus one more KILLER go into the machine face down, so nobody can tell which ball is which or steer it.${inside} After that comes Split or Steal. Talk about the vote and the reveal, about trust, and about the final.`;
 }
 
 function task(request: ActionRequest, ctx: AgentContext): string {
@@ -229,7 +252,7 @@ Respond with JSON: {"thoughts": "...", "say": "..."}`;
         ctx.stage === 'final'
           ? `This is your conversation with ${describeList(others)} before you both secretly choose SPLIT or STEAL (jackpot ${formatMoney(ctx.jackpot ?? 0)}).`
           : request.reflect
-            ? 'The vote is over. React to the result and the reveal: who was lying, who you trust now, and what it means for what comes next.'
+            ? afterVote(ctx)
             : 'This is the open discussion before the secret vote.';
       const reply =
         request.replyTo !== undefined ? `${name(p, request.replyTo)} just spoke to you directly, so reply to them.\n` : '';

@@ -1,0 +1,11 @@
+# Workflow actions are pinned to exact commits (the deploy job holds AWS
+# credentials). Dependabot proposes updates to those pins as pull requests.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']

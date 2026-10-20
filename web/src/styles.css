@@ -1796,3 +1796,53 @@ textarea {
     font-size: 0.9rem;
   }
 }
+
+/* Compare models (scatter) */
+.compare__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+.compare__plot svg {
+  cursor: crosshair;
+}
+.compare__dot {
+  fill: var(--chart-accent);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+.compare__dot--hi {
+  fill: var(--text);
+  stroke: var(--chart-accent);
+  stroke-width: 3;
+}
+.compare__label {
+  fill: var(--text-2);
+  font-size: 11px;
+}
+.compare__label--hi {
+  fill: var(--text);
+  font-weight: 600;
+}
+.compare__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+.compare__row strong {
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+}
+.compare__row span {
+  color: var(--text-2);
+}
+.newgame__cost {
+  margin: 4px 0 12px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+.newgame__cost strong {
+  color: var(--text);
+}

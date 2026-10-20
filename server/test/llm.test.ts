@@ -122,6 +122,10 @@ describe('LlmAgent', () => {
     const sys = systemPrompt(ctx);
     expect(sys).toContain('You are Claude Sonnet 4.5');
     expect(sys).toContain('Your goal is to leave with as much money as possible');
+    // Big claims grow the prize; the question is whether they're believable (not "dragging it down").
+    expect(sys).toContain('Big cash claims are good news');
+    expect(sys).toContain('only 9 are £20,000 or more');
+    expect(sys).not.toMatch(/drag/i);
     const user = userPrompt({ kind: 'claim', stage: 'r1', backCount: 2 }, ctx);
     expect(user).toContain('Your back row (only you can see): £5,000 and £10');
     expect(user).toContain('"claimed_back_row"');
@@ -174,6 +178,16 @@ describe('LlmAgent', () => {
     expect(user).toContain('shared by you and GPT-5 until Split or Steal');
     expect(user).toContain('Choose a ball to BIN. It is thrown away and does not go into the jackpot');
     expect(user).toContain('GPT-5 really had £75, £5,000 and KILLER (claimed £75, £5,000 and KILLER, so told the truth)');
+
+    // The finalists' chat after the round 2 vote says what's next, and what the machine will hold.
+    const afterVote = { ...bow, stage: 'r2' as const, board: undefined };
+    const chat = userPrompt({ kind: 'chat', stage: 'r2', secondsLeft: 20, participants: [0, 1], reflect: true }, afterVote);
+    expect(chat).toContain('you and GPT-5 are the finalists');
+    expect(chat).toContain('pure luck');
+    expect(chat).toContain('It will hold £10, £20, £75, £500, £1,000, £5,000 and 5 KILLERs (5 KILLERs among 11 balls)');
+    // And Split or Steal says plainly that the balls are done with.
+    const final = { ...bow, stage: 'final' as const, board: undefined, jackpot: 6000 };
+    expect(userPrompt({ kind: 'final_choice' }, final)).toContain('no balls are in play any more');
 
     // If the numbers don't add up, it says nothing rather than something wrong.
     const odd = { ...bow, board: { ...bow.board!, won: [] } };
