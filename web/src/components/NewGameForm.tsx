@@ -158,7 +158,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
     setError(null);
     try {
       const specs: SeatSpec[] = seats.map((s) =>
-        s.kind === 'human' ? { kind: 'human', name: s.name || 'You' } : { kind: s.kind, model: s.model.trim() },
+        s.kind === 'human' ? { kind: 'human', name: s.name.trim() } : { kind: s.kind, model: s.model.trim() },
       );
       const res = await api.createGame({ seats: specs, options });
       if (res.playerToken) playerToken.set(res.id, res.playerToken);
@@ -233,7 +233,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
                 <input
                   value={seat.name}
                   maxLength={20}
-                  placeholder="Your name"
+                  placeholder="Your name (optional)"
                   onChange={(e) => update(i, { name: e.target.value })}
                   aria-label="Your name"
                 />

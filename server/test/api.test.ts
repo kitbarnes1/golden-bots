@@ -110,6 +110,27 @@ describe('API', () => {
     expect(twoHumans.statusCode).toBe(400);
   });
 
+  it('gives a human who leaves their name blank a proper name, not "You"', async () => {
+    for (const name of [undefined, '   ', '!!!']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/games',
+        payload: {
+          seats: [{ kind: 'human', ...(name === undefined ? {} : { name }) }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))],
+          options: { readAtMyPace: false },
+        },
+      });
+      const { id, seat } = res.json<CreateGameResponse>();
+      const game = await getGame(id);
+      const me = game.players.find((p) => p.seat === seat)!;
+      expect(me.name).toMatch(/^[A-Z][a-z]+$/); // a show-style first name
+      expect(me.name).not.toBe('You');
+      expect(game.players.filter((p) => p.name === me.name)).toHaveLength(1);
+      manager.abort(id);
+      await waitFor(() => !manager.isRunning(id));
+    }
+  });
+
   it('lets a human play, hiding everyone else’s secrets until the game ends', async () => {
     const res = await app.inject({
       method: 'POST',
