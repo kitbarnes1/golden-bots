@@ -8,7 +8,6 @@ import type {
   ServerInfo,
 } from '@gb/shared';
 
-const ADMIN_KEY = 'gb.adminKey';
 const tokenKey = (gameId: string) => `gb.token.${gameId}`;
 
 function storageGet(key: string): string | null {
@@ -28,10 +27,8 @@ function storageSet(key: string, value: string | null): void {
   }
 }
 
-export const adminKey = {
-  get: () => storageGet(ADMIN_KEY) ?? '',
-  set: (value: string) => storageSet(ADMIN_KEY, value || null),
-};
+// Earlier versions kept the admin password in localStorage. Don't leave it lying around.
+storageSet('gb.adminKey', null);
 
 export const playerToken = {
   get: (gameId: string) => storageGet(tokenKey(gameId)) ?? undefined,
@@ -50,8 +47,6 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set('Content-Type', 'application/json');
-  const key = adminKey.get();
-  if (key) headers.set('x-admin-key', key);
   const res = await fetch(path, { ...init, headers });
   const text = await res.text();
   const json = text ? (JSON.parse(text) as unknown) : undefined;
@@ -67,7 +62,10 @@ export const api = {
   models: () => request<ModelOption[]>('/api/models'),
   /** Free models that just passed a quick check (admin only; can take ~30s). */
   freeModels: () => request<ModelOption[]>('/api/models/free'),
-  checkAdmin: () => request<{ ok: true }>('/api/admin/check', { method: 'POST' }),
+  /** Whether a login is needed to start games, and whether this browser has one (a session cookie). */
+  session: () => request<{ required: boolean; loggedIn: boolean }>('/api/session'),
+  login: (password: string) => request<{ ok: true }>('/api/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  logout: () => request<{ ok: true }>('/api/logout', { method: 'POST' }),
   games: (limit = 30, offset = 0) => request<GameSummary[]>(`/api/games?limit=${limit}&offset=${offset}`),
   game: (id: string) => {
     const token = playerToken.get(id);

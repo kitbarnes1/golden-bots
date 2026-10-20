@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { DEFAULT_OPTIONS, type GameOptions, type ModelOption, type SeatSpec, type ServerInfo } from '@gb/shared';
-import { adminKey, api, ApiError, playerToken } from '../lib/api';
+import { api, ApiError, playerToken } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { ModelPicker, type PriceTier } from './ModelPicker';
 
 interface SeatDraft {
@@ -44,8 +45,7 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
   const [models, setModels] = useState<ModelOption[] | null>(null);
   const [seats, setSeats] = useState<SeatDraft[] | null>(null);
   const [options, setOptions] = useState<Omit<GameOptions, 'seed'>>({ ...DEFAULT_OPTIONS });
-  const [password, setPassword] = useState('');
-  const [unlocked, setUnlocked] = useState(!info.requiresAdmin);
+  const auth = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [checkingFree, setCheckingFree] = useState(false);
@@ -74,14 +74,6 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
         );
       });
   }, [info.mockStrategies, info.hasOpenRouterKey, defaultMock]);
-
-  useEffect(() => {
-    if (!info.requiresAdmin || !adminKey.get()) return;
-    api.checkAdmin().then(
-      () => setUnlocked(true),
-      () => adminKey.set(''),
-    );
-  }, [info.requiresAdmin]);
 
   if (!seats) {
     return (
@@ -114,22 +106,12 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
       if (working.length) applyLineup(working);
       else setError('No free models are answering properly right now. Try again in a few minutes.');
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) setError('Unlock with the admin password first.');
-      else setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError && err.status === 401) {
+        auth.refresh();
+        setError('Log in first.');
+      } else setError(err instanceof Error ? err.message : String(err));
     } finally {
       setCheckingFree(false);
-    }
-  };
-
-  const unlock = async () => {
-    adminKey.set(password);
-    try {
-      await api.checkAdmin();
-      setUnlocked(true);
-      setError(null);
-    } catch {
-      adminKey.set('');
-      setError('That password is not right.');
     }
   };
 
@@ -144,8 +126,11 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
       if (res.playerToken) playerToken.set(res.id, res.playerToken);
       navigate(`/game/${res.id}`);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) setUnlocked(false);
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiError && err.status === 401) {
+        // The session has expired (or the password was changed).
+        auth.refresh();
+        setError('Your login has expired. Log in again to start a game.');
+      } else setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -314,20 +299,13 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
         </div>
       </details>
 
-      {!unlocked ? (
-        <form
-          className="newgame__unlock"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void unlock();
-          }}
-        >
-          <label className="field">
-            <span>Admin password (games cost API credits)</span>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          <button className="btn btn--gold">Unlock</button>
-        </form>
+      {auth.required === null ? null : !auth.canAdmin ? (
+        <div className="newgame__login">
+          <Link className="btn btn--gold btn--big" to="/login?next=/">
+            Log in to start a game
+          </Link>
+          <p className="muted small">Games spend API credits, so starting one needs the admin login. Anyone can watch.</p>
+        </div>
       ) : (
         <button
           className="btn btn--gold btn--big"

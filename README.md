@@ -81,7 +81,7 @@ All settings are environment variables (see `.env.example`).
 | Variable | Default | What it does |
 |---|---|---|
 | `OPENROUTER_API_KEY` | – | Enables AI contestants. |
-| `ADMIN_PASSWORD` | – | Required to start, stop or delete games. **Set this in production**, otherwise anyone can spend your credits. Watching and the leaderboard stay public. |
+| `ADMIN_PASSWORD` | – | Log in with it on the **Log in** page to start, stop or delete games. **Set this in production**, otherwise anyone can spend your credits. Watching and the leaderboard stay public. The login is a 30-day HttpOnly session cookie (the password is never stored in the browser); 5 wrong guesses lock that visitor out for 15 minutes, and 30 in an hour from anywhere pause all logins for 30 minutes. Changing the password signs everyone out. |
 | `PUBLIC_URL` | `http://localhost:3000` | Sent to OpenRouter as the app's referer. |
 | `MAX_CONCURRENT_GAMES` | `3` | Games that can run at once. |
 | `FEATURED_MODELS` | automatic | Comma-separated model ids to suggest first in the picker (also used for random lineups and autoplay). Unset: the newest mid-priced model from each major lab. |

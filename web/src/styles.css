@@ -1740,3 +1740,59 @@ textarea {
   background: var(--gold-2);
   border-color: transparent;
 }
+
+/* Login */
+.login__card {
+  max-width: 420px;
+  margin: 40px auto;
+}
+.login__card form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login__actions {
+  display: flex;
+  gap: 10px;
+}
+.newgame__login {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.topbar__logout {
+  font: inherit;
+  font-weight: 500;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.topbar__logout:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Narrow screens: the header wraps instead of scrolling sideways. */
+@media (max-width: 600px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 10px 12px;
+  }
+  .topbar__brand {
+    font-size: 1.3rem;
+  }
+  .topbar__nav {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .topbar__nav a,
+  .topbar__logout {
+    padding: 5px 9px;
+    font-size: 0.9rem;
+  }
+}

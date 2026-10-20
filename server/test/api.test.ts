@@ -287,18 +287,46 @@ describe('API', () => {
     expect(text).toMatch(/event: end\ndata: \{"status":"finished"\}/);
   });
 
-  it('requires the admin password when one is set', async () => {
+  it('sends plain-http visitors (via Cloudflare) to https, and asks browsers to stay there', async () => {
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    await setup({ publicUrl: 'https://goldenballs.example.test' });
+    const http = await app.inject({ url: '/leaderboard?x=1', headers: { 'cf-visitor': '{"scheme":"http"}' } });
+    expect(http.statusCode).toBe(301);
+    expect(http.headers.location).toBe('https://goldenballs.example.test/leaderboard?x=1');
+    const https = await app.inject({ url: '/healthz', headers: { 'cf-visitor': '{"scheme":"https"}' } });
+    expect(https.statusCode).toBe(200);
+    expect(https.headers['strict-transport-security']).toBe('max-age=31536000');
+    // Straight to the app (local development): no redirect.
+    expect((await app.inject('/healthz')).statusCode).toBe(200);
+  });
+
+  it('needs a login to start games when a password is set; watching stays public', async () => {
     await manager.shutdown();
     await app.close();
     db.close();
     await setup({ adminPassword: 'hunter2' });
     const payload = { seats: mocks.map((model) => ({ kind: 'mock', model })) };
     expect((await app.inject({ method: 'POST', url: '/api/games', payload })).statusCode).toBe(401);
-    expect(
-      (await app.inject({ method: 'POST', url: '/api/games', payload, headers: { 'x-admin-key': 'wrong' } })).statusCode,
-    ).toBe(401);
-    const ok = await app.inject({ method: 'POST', url: '/api/games', payload, headers: { 'x-admin-key': 'hunter2' } });
-    expect(ok.statusCode).toBe(201);
+    expect((await app.inject('/api/session')).json()).toEqual({ required: true, loggedIn: false });
+    // The old password header no longer works.
+    expect((await app.inject({ method: 'POST', url: '/api/games', payload, headers: { 'x-admin-key': 'hunter2' } })).statusCode).toBe(401);
+
+    const wrong = await app.inject({ method: 'POST', url: '/api/login', payload: { password: 'nope' } });
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.headers['set-cookie']).toBeUndefined();
+
+    const login = await app.inject({ method: 'POST', url: '/api/login', payload: { password: 'hunter2' } });
+    expect(login.statusCode).toBe(200);
+    const cookie = String(login.headers['set-cookie']).split(';')[0]!;
+    expect(String(login.headers['set-cookie'])).toContain('HttpOnly; SameSite=Strict');
+    expect((await app.inject({ url: '/api/session', headers: { cookie } })).json()).toEqual({ required: true, loggedIn: true });
+    expect((await app.inject({ method: 'POST', url: '/api/games', payload, headers: { cookie } })).statusCode).toBe(201);
+
+    const logout = await app.inject({ method: 'POST', url: '/api/logout', headers: { cookie } });
+    expect(String(logout.headers['set-cookie'])).toMatch(/^gb_session=; .*Max-Age=0/);
+
     // Viewing stays public.
     expect((await app.inject('/api/leaderboard')).statusCode).toBe(200);
     expect((await app.inject('/api/games')).statusCode).toBe(200);
