@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+aws_region            = "eu-west-2"
+domain                = "thekitbarnes.com"
+subdomain             = "goldenballs"
+cloudflare_account_id = "your-cloudflare-account-id"
+cloudflare_zone_id    = "your-thekitbarnes.com-zone-id"
+openrouter_api_key    = "sk-or-v1-..."
+admin_password        = "choose-something-long"
+
+# Optional
+# instance_type               = "t4g.small"
+# create_github_oidc_provider = false  # if your account already has the GitHub OIDC provider
+# extra_app_env = {
+#   AUTOPLAY_INTERVAL_MINUTES = "180"
+#   # Leave AUTOPLAY_MODELS unset to draw from the automatically featured models.
+#   MAX_CONCURRENT_GAMES      = "2"
+# }

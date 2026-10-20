@@ -1,0 +1,350 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import type {
+  ActionRequest,
+  CreateGameResponse,
+  GameDetail,
+  GameEvent,
+  LeaderboardResponse,
+  ServerInfo,
+} from '@gb/shared';
+import { buildApp } from '../src/app.js';
+import { config, type Config } from '../src/config.js';
+import { Db } from '../src/db.js';
+import { GameManager } from '../src/games/manager.js';
+import { ModelCatalog } from '../src/models.js';
+
+const quiet = { info: () => {}, warn: () => {}, error: () => {} };
+const mocks = ['mock/honest', 'mock/bluffer', 'mock/chaos', 'mock/honest'];
+
+let app: FastifyInstance;
+let db: Db;
+let manager: GameManager;
+
+async function setup(overrides: Partial<Config> = {}) {
+  const cfg: Config = { ...config, mockDelayMs: 0, adminPassword: '', webDist: '/nonexistent', ...overrides };
+  db = new Db(':memory:');
+  const catalog = new ModelCatalog(null, cfg.featuredModels, quiet);
+  manager = new GameManager(db, cfg, null, catalog, quiet);
+  app = await buildApp({ cfg, db, manager, catalog, hasOpenRouterKey: false, logger: false });
+}
+
+async function waitFor<T>(fn: () => T | undefined | false, timeoutMs = 5000): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const v = fn();
+    if (v) return v;
+    if (Date.now() - start > timeoutMs) throw new Error('Timed out waiting');
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+async function getGame(id: string, token?: string): Promise<GameDetail> {
+  const res = await app.inject({ url: `/api/games/${id}`, headers: token ? { 'x-player-token': token } : {} });
+  return res.json();
+}
+
+describe('API', () => {
+  beforeEach(async () => setup());
+  afterEach(async () => {
+    await manager.shutdown();
+    await app.close();
+    db.close();
+  });
+
+  it('reports server info', async () => {
+    const info: ServerInfo = (await app.inject('/api/info')).json();
+    expect(info.hasOpenRouterKey).toBe(false);
+    expect(info.mockStrategies.map((m) => m.id)).toContain('mock/honest');
+  });
+
+  it('plays a mock game end to end and records it (unranked)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { seats: mocks.map((model) => ({ kind: 'mock', model })) },
+    });
+    expect(res.statusCode).toBe(201);
+    const { id } = res.json<CreateGameResponse>();
+
+    await waitFor(() => !manager.isRunning(id));
+    const game = await getGame(id);
+    expect(game.status).toBe('finished');
+    expect(game.ranked).toBe(false);
+    expect(game.viewer.omniscient).toBe(true);
+    expect(game.events.at(-1)?.type).toBe('game_over');
+    // AI-only games show everything, including private thoughts.
+    expect(game.events.some((e) => e.type === 'thoughts')).toBe(true);
+    expect(game.players.filter((p) => p.reachedFinal)).toHaveLength(2);
+
+    const ranked: LeaderboardResponse = (await app.inject('/api/leaderboard')).json();
+    expect(ranked.rows).toHaveLength(0);
+    const all: LeaderboardResponse = (await app.inject('/api/leaderboard?includeUnranked=1')).json();
+    expect(all.totalGames).toBe(1);
+    expect(all.rows.reduce((s, r) => s + r.games, 0)).toBe(4);
+    expect(all.history).toHaveLength(4);
+    const honest = all.rows.find((r) => r.key === 'mock/honest')!;
+    expect(honest.games).toBe(2);
+    expect(honest.truthfulClaims).toBe(honest.claims);
+  });
+
+  it('rejects bad lineups and AI seats without an API key', async () => {
+    const three = await app.inject({ method: 'POST', url: '/api/games', payload: { seats: mocks.slice(0, 3).map((model) => ({ kind: 'mock', model })) } });
+    expect(three.statusCode).toBe(400);
+    const ai = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { seats: [{ kind: 'ai', model: 'openai/gpt-5' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))] },
+    });
+    expect(ai.statusCode).toBe(400);
+    expect(ai.json().error).toMatch(/OPENROUTER_API_KEY/);
+    const twoHumans = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: { seats: [{ kind: 'human' }, { kind: 'human' }, { kind: 'mock', model: 'mock/chaos' }, { kind: 'mock', model: 'mock/chaos' }] },
+    });
+    expect(twoHumans.statusCode).toBe(400);
+  });
+
+  it('lets a human play, hiding everyone else’s secrets until the game ends', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/games',
+      payload: {
+        seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))],
+        options: { chatSeconds: 30, finalChatSeconds: 30 },
+      },
+    });
+    const { id, playerToken, seat } = res.json<CreateGameResponse>();
+    expect(playerToken).toBeTruthy();
+    expect(seat).toBeTypeOf('number');
+
+    const spectator = await getGame(id);
+    expect(spectator.viewer).toEqual({ omniscient: false });
+    expect(spectator.events.every((e) => e.vis === 'public')).toBe(true);
+
+    let moves = 0;
+    const chatsJoined = new Set<number>();
+    while (manager.isRunning(id)) {
+      const me = await getGame(id, playerToken);
+      expect(me.viewer.seat).toBe(seat);
+      // While still in, the human sees their own back row but nobody else's, and no thoughts.
+      if (!me.events.some((e) => e.type === 'eliminated' && e.seat === seat)) {
+        for (const e of me.events) {
+          if (e.type === 'back_row') expect(e.seat).toBe(seat);
+          expect(e.type).not.toBe('thoughts');
+        }
+      }
+      // Join each open floor: ask an AI something directly, then say we're done.
+      const opened = me.events.findLast((e) => e.type === 'chat_started' || e.type === 'chat_ended');
+      if (opened?.type === 'chat_started' && opened.participants.includes(seat!) && !chatsJoined.has(opened.seq)) {
+        chatsJoined.add(opened.seq);
+        const ai = opened.participants.find((s) => s !== seat)!;
+        const headers = { 'x-player-token': playerToken! };
+        const said = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers, payload: { text: 'What is really on your back row?', to: ai } });
+        expect(said.statusCode, said.body).toBe(200);
+        const done = await app.inject({ method: 'POST', url: `/api/games/${id}/chat/done`, headers });
+        expect(done.statusCode, done.body).toBe(200);
+        continue;
+      }
+      const answered = new Set(me.events.filter((e) => e.type === 'input_received').map((e) => (e as { requestId: string }).requestId));
+      const pending = me.events.filter(
+        (e): e is Extract<GameEvent, { type: 'awaiting_input' }> => e.type === 'awaiting_input' && !answered.has(e.requestId),
+      );
+      const next = pending.at(-1);
+      if (!next) {
+        await new Promise((r) => setTimeout(r, 5));
+        continue;
+      }
+      const response = answer(next.request, me, seat!);
+      const act = await app.inject({
+        method: 'POST',
+        url: `/api/games/${id}/action`,
+        headers: { 'x-player-token': playerToken! },
+        payload: { requestId: next.requestId, response },
+      });
+      expect(act.statusCode, act.body).toBe(200);
+      moves++;
+    }
+    expect(moves).toBeGreaterThanOrEqual(2); // at least a claim and a vote
+    expect(chatsJoined.size).toBeGreaterThanOrEqual(1);
+
+    const after = await getGame(id);
+    expect(after.status).toBe('finished');
+    expect(after.ranked).toBe(false); // mocks were playing
+    expect(after.viewer.omniscient).toBe(true);
+    expect(after.events.some((e) => e.type === 'thoughts')).toBe(true);
+    expect(after.players.find((p) => p.seat === seat)!.name).toBe('Kit');
+    // Whoever the human spoke to answered promptly (a message already in flight may land first).
+    const speeches = after.events.filter((e): e is Extract<GameEvent, { type: 'speech' }> => e.type === 'speech');
+    const asked = speeches.filter((s) => s.seat === seat && s.to !== undefined);
+    expect(asked.length).toBe(chatsJoined.size);
+    for (const q of asked) {
+      const closed = after.events.find((e) => e.seq > q.seq && e.type === 'chat_ended')!;
+      const replies = speeches.filter((s) => s.seq > q.seq && s.seq < closed.seq && s.seat !== seat);
+      if (replies.length > 0) expect(replies.slice(0, 2).map((s) => s.seat)).toContain(q.to);
+    }
+    // Chat is rejected once the game is over.
+    const late = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers: { 'x-player-token': playerToken! }, payload: { text: 'hi' } });
+    expect(late.statusCode).toBe(409);
+  });
+
+  it('shows everything to everyone once the human player is knocked out', async () => {
+    // Slow the mocks a little, or the game is over before we can look at it with the human out.
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    await setup({ mockDelayMs: 30 });
+    // Mocks are deterministic per seed; claiming two Killers soon gets the human voted off.
+    let checked = false;
+    for (let seed = 1; seed <= 10 && !checked; seed++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/games',
+        payload: {
+          seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))],
+          options: { chatSeconds: 0, finalChatSeconds: 0, seed },
+        },
+      });
+      const { id, playerToken, seat } = res.json<CreateGameResponse>();
+      while (manager.isRunning(id)) {
+        const me = await getGame(id, playerToken);
+        if (me.events.some((e) => e.type === 'eliminated' && e.seat === seat)) {
+          if (!manager.isRunning(id)) break;
+          expect(me.viewer).toEqual({ seat, omniscient: true });
+          expect(me.events.some((e) => e.type === 'thoughts')).toBe(true);
+          expect(me.events.some((e) => e.type === 'back_row' && e.seat !== seat)).toBe(true);
+          expect((await getGame(id)).viewer).toEqual({ omniscient: true });
+          checked = true;
+          break;
+        }
+        const answered = new Set(me.events.filter((e) => e.type === 'input_received').map((e) => (e as { requestId: string }).requestId));
+        const next = me.events.findLast(
+          (e): e is Extract<GameEvent, { type: 'awaiting_input' }> => e.type === 'awaiting_input' && !answered.has(e.requestId),
+        );
+        if (!next) {
+          await new Promise((r) => setTimeout(r, 5));
+          continue;
+        }
+        const response =
+          next.request.kind === 'claim'
+            ? { claim: Array.from({ length: next.request.backCount }, () => 'killer'), say: 'Killers, sorry.' }
+            : answer(next.request, me, seat!);
+        await app.inject({
+          method: 'POST',
+          url: `/api/games/${id}/action`,
+          headers: { 'x-player-token': playerToken! },
+          payload: { requestId: next.requestId, response },
+        });
+      }
+      manager.abort(id);
+      await waitFor(() => !manager.isRunning(id));
+    }
+    expect(checked).toBe(true);
+  });
+
+  it('validates human moves and rejects strangers', async () => {
+    const { id, playerToken } = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/games',
+        payload: { seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))] },
+      })
+    ).json<CreateGameResponse>();
+    const detail = await waitForAwaiting(id, playerToken!);
+    const bad = await app.inject({
+      method: 'POST',
+      url: `/api/games/${id}/action`,
+      headers: { 'x-player-token': playerToken! },
+      payload: { requestId: detail.requestId, response: { claim: ['lots'], say: '' } },
+    });
+    expect(bad.statusCode).toBe(400);
+    const stranger = await app.inject({
+      method: 'POST',
+      url: `/api/games/${id}/action`,
+      headers: { 'x-player-token': 'nope' },
+      payload: { requestId: detail.requestId, response: {} },
+    });
+    expect(stranger.statusCode).toBe(400);
+    const stop = await app.inject({ method: 'POST', url: `/api/games/${id}/abort` });
+    expect(stop.statusCode).toBe(200);
+    await waitFor(() => !manager.isRunning(id));
+    expect((await getGame(id)).status).toBe('abandoned');
+  });
+
+  it('streams a live game over SSE', async () => {
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const address = app.server.address() as { port: number };
+    await setupSlowMocks();
+    const { id } = manager.createGame({ seats: mocks.map((model) => ({ kind: 'mock', model })) });
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/games/${id}/stream?after=-1`);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const text = await res.text(); // stream ends when the game does
+    const seqs = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    expect(seqs.length).toBeGreaterThan(20);
+    expect(seqs).toEqual(seqs.map((_, i) => i));
+    expect(text).toContain('event: status');
+    expect(text).toMatch(/event: end\ndata: \{"status":"finished"\}/);
+  });
+
+  it('requires the admin password when one is set', async () => {
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    await setup({ adminPassword: 'hunter2' });
+    const payload = { seats: mocks.map((model) => ({ kind: 'mock', model })) };
+    expect((await app.inject({ method: 'POST', url: '/api/games', payload })).statusCode).toBe(401);
+    expect(
+      (await app.inject({ method: 'POST', url: '/api/games', payload, headers: { 'x-admin-key': 'wrong' } })).statusCode,
+    ).toBe(401);
+    const ok = await app.inject({ method: 'POST', url: '/api/games', payload, headers: { 'x-admin-key': 'hunter2' } });
+    expect(ok.statusCode).toBe(201);
+    // Viewing stays public.
+    expect((await app.inject('/api/leaderboard')).statusCode).toBe(200);
+    expect((await app.inject('/api/games')).statusCode).toBe(200);
+  });
+
+  it('limits concurrent games', async () => {
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    await setup({ maxConcurrentGames: 1, mockDelayMs: 50 });
+    const payload = { seats: mocks.map((model) => ({ kind: 'mock', model })) };
+    expect((await app.inject({ method: 'POST', url: '/api/games', payload })).statusCode).toBe(201);
+    expect((await app.inject({ method: 'POST', url: '/api/games', payload })).statusCode).toBe(429);
+  });
+});
+
+async function setupSlowMocks() {
+  // A little delay so the stream has to deliver events live, not just from the backlog.
+  (manager as unknown as { cfg: Config }).cfg.mockDelayMs = 1;
+}
+
+async function waitForAwaiting(id: string, token: string) {
+  for (let i = 0; i < 500; i++) {
+    const me = await getGame(id, token);
+    const e = me.events.find((x): x is Extract<GameEvent, { type: 'awaiting_input' }> => x.type === 'awaiting_input');
+    if (e) return e;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error('never asked for input');
+}
+
+/** A simple, valid human move for each kind of request. */
+function answer(request: ActionRequest, game: GameDetail, seat: number): unknown {
+  switch (request.kind) {
+    case 'claim':
+      return { claim: Array.from({ length: request.backCount }, () => 1000), say: 'Trust me.' };
+    case 'speak':
+      return { say: 'I am a human, honest.' };
+    case 'vote':
+    case 'tie_decide':
+      return { target: request.candidates[0] };
+    case 'pick':
+      return { index: request.available[0] };
+    case 'final_choice':
+      return { choice: 'split' };
+  }
+  void game;
+  void seat;
+}

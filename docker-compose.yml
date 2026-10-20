@@ -1,0 +1,30 @@
+# Local:  docker compose up --build            -> http://localhost:3000
+# Server: docker compose --profile tunnel up -d (adds the Cloudflare Tunnel)
+services:
+  app:
+    image: ${APP_IMAGE:-golden-balls:local}
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - gbdata:/data
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    stop_grace_period: 20s
+
+  # Publishes the app at your Cloudflare hostname without opening any inbound ports.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      # Not marked required: compose checks that even when the tunnel profile is off.
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+
+volumes:
+  gbdata:
