@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { formatMoney, type GameEvent } from '@gb/shared';
 import { ActionPanel } from '../components/ActionPanel';
@@ -39,6 +39,44 @@ export function GamePage() {
 
   const shown = useMemo(() => (cursor === null ? events : events.slice(0, cursor)), [events, cursor]);
   const view = useMemo(() => buildView(shown), [shown]);
+
+  // Reading at my own pace: the pause (if any) that's waiting for me to click Continue.
+  const readingSeq =
+    game.status === 'running' && cursor === null && view.pause?.reason === 'reading' && view.pause.seat === detail?.viewer.seat
+      ? view.pause.seq
+      : undefined;
+  const sentFor = useRef<number | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const readOn = async (seq: number) => {
+    if (sentFor.current === seq) return;
+    sentFor.current = seq;
+    setReadError(null);
+    try {
+      await api.continueReading(id);
+    } catch (err) {
+      // 409: it had already moved on (a reply counts as having read it, as does another tab).
+      if (err instanceof ApiError && err.status === 409) return;
+      sentFor.current = null;
+      setReadError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  // Space or Enter carries on too, unless you're typing something or on another control.
+  // An empty chat box has nothing to send, so there they carry on as well.
+  useEffect(() => {
+    if (readingSeq === undefined) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || (e.key !== ' ' && e.key !== 'Enter') || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) {
+        if (t.value !== '') return;
+      } else if (t instanceof Element && t.closest('select, button, a, [contenteditable]')) return;
+      e.preventDefault();
+      void readOn(readingSeq);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readingSeq]);
 
   // Replay ticker.
   useEffect(() => {
@@ -184,8 +222,12 @@ export function GamePage() {
       {live && viewer.omniscient && mySeat !== undefined && view.seats[mySeat]?.eliminatedStage && (
         <p className="notice">You're out, so now you can see everyone's hidden balls and private thoughts.</p>
       )}
-      {live && !replaying && view.pausedFor !== undefined && view.pausedFor !== mySeat && (
-        <p className="notice">Paused: waiting for {view.players[view.pausedFor]?.name ?? 'the player'} to come back.</p>
+      {live && !replaying && view.pause && view.pause.seat !== mySeat && (
+        <p className="notice">
+          {view.pause.reason === 'reading'
+            ? `${view.players[view.pause.seat]?.name ?? 'The player'} is reading at their own pace. The game carries on when they click Continue.`
+            : `Paused: waiting for ${view.players[view.pause.seat]?.name ?? 'the player'} to come back.`}
+        </p>
       )}
       {live && !game.connected && <p className="notice">Reconnecting to the live game…</p>}
 
@@ -200,7 +242,12 @@ export function GamePage() {
             </button>
           </div>
           {view.floor && (
-            <FloorBanner floor={view.floor} skewMs={game.clockSkewMs} live={live && !replaying && view.pausedFor === undefined} />
+            <FloorBanner
+              floor={view.floor}
+              skewMs={game.clockSkewMs}
+              live={live && !replaying}
+              {...(view.pause ? { stoppedAt: view.pause.since } : {})}
+            />
           )}
           {tab === 'rounds' && (
             <RoundsReview
@@ -267,7 +314,14 @@ export function GamePage() {
           )}
 
           {live && !replaying && view.floor && mySeat !== undefined && view.floor.participants.includes(mySeat) && (
-            <ChatBox gameId={id} floor={view.floor} mySeat={mySeat} players={view.players} skewMs={game.clockSkewMs} />
+            <ChatBox
+              gameId={id}
+              floor={view.floor}
+              mySeat={mySeat}
+              players={view.players}
+              skewMs={game.clockSkewMs}
+              {...(view.pause ? { stoppedAt: view.pause.since } : {})}
+            />
           )}
 
           <div className="game__meta">
@@ -289,6 +343,18 @@ export function GamePage() {
             reveal={reveal && viewer.omniscient}
             {...(mySeat !== undefined ? { viewerSeat: mySeat } : {})}
             {...(live && !replaying ? { activity: { seats: game.waitingOn, action: game.waitingAction } } : {})}
+            {...(readingSeq !== undefined
+              ? {
+                  footer: (
+                    <>
+                      <span className="muted small">{readError ?? 'Take your time. Nothing happens until you carry on.'}</span>
+                      <button type="button" className="btn btn--gold btn--small" onClick={() => void readOn(readingSeq)}>
+                        Continue <kbd>Space</kbd>
+                      </button>
+                    </>
+                  ),
+                }
+              : {})}
           />
         </aside>
       </div>

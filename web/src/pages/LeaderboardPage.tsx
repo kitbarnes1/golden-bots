@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatMoney, type LeaderboardResponse, type LeaderboardRow } from '@gb/shared';
 import { CompareChart } from '../components/CompareChart';
-import { TrendChart } from '../components/TrendChart';
+import { RankChart } from '../components/RankChart';
 import { api, prefs } from '../lib/api';
 
 type SortKey =
@@ -50,7 +50,8 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
 export function LeaderboardPage() {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [includeHumans, setIncludeHumans] = useState(() => prefs.get('lb.humans', true));
+  // Off by default (a new key, so an old "on" from before doesn't stick).
+  const [includeHumans, setIncludeHumans] = useState(() => prefs.get('lb.includeHumans', false));
   const [includeUnranked, setIncludeUnranked] = useState(() => prefs.get('lb.practice', false));
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'avgWinnings', desc: true });
   const [highlight, setHighlight] = useState<string | null>(null);
@@ -93,7 +94,7 @@ export function LeaderboardPage() {
             checked={includeHumans}
             onChange={(e) => {
               setIncludeHumans(e.target.checked);
-              prefs.set('lb.humans', e.target.checked);
+              prefs.set('lb.includeHumans', e.target.checked);
             }}
           />
           Include human players
@@ -123,23 +124,12 @@ export function LeaderboardPage() {
         <>
           <section className="card">
             <div className="card__head">
-              <h2>Average winnings over time</h2>
-              <label className="field field--inline">
-                <span>Highlight</span>
-                <select value={selected ?? ''} onChange={(e) => setHighlight(e.target.value)}>
-                  {data.rows.map((r) => (
-                    <option key={r.key} value={r.key}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <h2>Winnings by model</h2>
             </div>
             <p className="muted small">
-              Each line is a contestant's running average per game. {selected ? labels.get(selected) : ''} is highlighted; click a
-              row below to compare someone else.
+              Highest first. Click a bar (or a row in the table) to highlight that contestant everywhere on this page.
             </p>
-            <TrendChart history={data.history} labels={labels} highlight={selected} />
+            <RankChart rows={data.rows} highlight={selected} onSelect={setHighlight} />
           </section>
 
           <section className="card">

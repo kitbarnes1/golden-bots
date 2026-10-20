@@ -261,6 +261,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ok: true };
   });
 
+  app.post('/api/games/:id/continue', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const token = tokenOf(req);
+    if (!token) throw new HttpError(401, 'Missing player token.');
+    const result = manager.continueReading(id, token);
+    if (!result.ok) return reply.status(result.status).send({ error: result.error });
+    return { ok: true };
+  });
+
   app.post('/api/games/:id/abort', async (req) => {
     requireAdmin(req);
     const { id } = req.params as { id: string };
@@ -280,7 +289,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const q = req.query as { includeUnranked?: string; includeHumans?: string };
     return db.leaderboard({
       includeUnranked: q.includeUnranked === '1' || q.includeUnranked === 'true',
-      includeHumans: q.includeHumans !== '0' && q.includeHumans !== 'false',
+      // Humans are left out unless asked for: the leaderboard is about the models.
+      includeHumans: q.includeHumans === '1' || q.includeHumans === 'true',
     });
   });
 

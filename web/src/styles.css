@@ -719,6 +719,11 @@ textarea {
   gap: 8px;
   margin-bottom: 8px;
 }
+.newgame__pace {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
 .newgame__options {
   margin: 8px 0 4px;
   border-top: 1px solid var(--line);
@@ -1361,34 +1366,6 @@ textarea {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.trend__line {
-  fill: none;
-  stroke: var(--chart-muted);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  opacity: 0.8;
-}
-.trend__line--hi {
-  stroke: var(--chart-accent);
-  opacity: 1;
-}
-.trend__dot {
-  fill: var(--chart-accent);
-  stroke: var(--card);
-  stroke-width: 2;
-}
-.trend__crosshair {
-  stroke: rgba(255, 255, 255, 0.35);
-  stroke-width: 1;
-}
-.trend__endlabel {
-  position: absolute;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text);
-  pointer-events: none;
-}
 .trend__tooltip {
   position: absolute;
   width: 224px;
@@ -1403,31 +1380,6 @@ textarea {
 .trend__tooltip-title {
   color: var(--muted);
   margin-bottom: 4px;
-}
-.trend__row {
-  display: grid;
-  grid-template-columns: 14px auto minmax(0, 1fr);
-  gap: 6px;
-  align-items: center;
-  color: var(--text-2);
-}
-.trend__row strong {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-.trend__row span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.trend__key {
-  display: inline-block;
-  width: 12px;
-  height: 2px;
-  background: var(--chart-muted);
-}
-.trend__row--hi .trend__key {
-  background: var(--chart-accent);
 }
 
 /* ------------------------------------------------------------- responsive */
@@ -1572,6 +1524,29 @@ textarea {
 }
 .feed__small {
   font-size: 0.8rem;
+}
+/* Reading at your own pace: stays in view at the bottom of the feed, under the newest line. */
+.feed__footer {
+  position: sticky;
+  bottom: -12px;
+  margin: auto -12px -12px;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border-top: 1px solid var(--line-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.feed__footer kbd {
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  margin-left: 4px;
+  border: 1px solid rgba(36, 26, 0, 0.4);
+  border-radius: 4px;
 }
 .feed__typing {
   color: var(--muted);
@@ -1845,4 +1820,85 @@ textarea {
 }
 .newgame__cost strong {
   color: var(--text);
+}
+
+/* Winnings by model (ranked bars) */
+.rank__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.rank__list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rank__row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(90px, 30%) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px;
+  font: inherit;
+  text-align: left;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.rank__row:hover,
+.rank__row:focus-visible {
+  background: rgba(255, 255, 255, 0.05);
+}
+.rank__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+.rank__track {
+  height: 14px;
+}
+.rank__bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--chart-accent);
+}
+.rank__value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 70px;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.rank__games {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.rank__row--hi .rank__name {
+  color: var(--text);
+  font-weight: 600;
+}
+.rank__row--hi .rank__bar {
+  box-shadow: 0 0 0 2px var(--text);
+}
+@media (max-width: 600px) {
+  /* Narrow screens: the name gets its own line so it isn't cut off. */
+  .rank__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+  }
+  .rank__name {
+    grid-column: 1 / -1;
+  }
 }

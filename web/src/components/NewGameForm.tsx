@@ -10,7 +10,7 @@ import {
   type SeatSpec,
   type ServerInfo,
 } from '@gb/shared';
-import { api, ApiError, playerToken } from '../lib/api';
+import { api, ApiError, playerToken, prefs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ModelPicker, type PriceTier } from './ModelPicker';
 
@@ -77,7 +77,10 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
   const navigate = useNavigate();
   const [models, setModels] = useState<ModelOption[] | null>(null);
   const [seats, setSeats] = useState<SeatDraft[] | null>(null);
-  const [options, setOptions] = useState<Omit<GameOptions, 'seed'>>({ ...DEFAULT_OPTIONS });
+  const [options, setOptions] = useState<Omit<GameOptions, 'seed'>>(() => ({
+    ...DEFAULT_OPTIONS,
+    readAtMyPace: prefs.get('readAtMyPace', DEFAULT_OPTIONS.readAtMyPace),
+  }));
   const auth = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -248,6 +251,22 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
           );
         })}
       </div>
+
+      {hasHuman && (
+        <label className="toggle newgame__pace">
+          <input
+            type="checkbox"
+            checked={options.readAtMyPace}
+            onChange={(e) => {
+              setOptions((o) => ({ ...o, readAtMyPace: e.target.checked }));
+              prefs.set('readAtMyPace', e.target.checked);
+            }}
+          />
+          <span>
+            Read at my own pace <span className="muted small">(after each thing an AI says, the game waits for you to click Continue)</span>
+          </span>
+        </label>
+      )}
 
       {canAi && (
         <div className="newgame__row">

@@ -117,11 +117,14 @@ export type GameEventBody =
   | { type: 'input_received'; seat: number; requestId: string }
   | { type: 'agent_error'; seat: number; action: ActionRequest['kind']; message: string }
   /** The human in `seat` left the game page; nothing happens until they're back. */
-  | { type: 'paused'; seat: number }
+  | { type: 'paused'; seat: number; reason?: PauseReason }
   | { type: 'resumed'; seat: number; pausedMs: number }
   | { type: 'game_error'; message: string };
 
 export type ChatEndReason = 'time' | 'quiet' | 'limit';
+
+/** Why a game is paused: the human player left the page, or is reading at their own pace. */
+export type PauseReason = 'away' | 'reading';
 
 export type GameEventType = GameEventBody['type'];
 

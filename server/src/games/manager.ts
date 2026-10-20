@@ -258,7 +258,7 @@ export class GameManager {
     if (game.humanSeat !== undefined && sub.viewer.seat === game.humanSeat) {
       game.playerStreams.add(sub);
       clearTimeout(game.pauseTimer);
-      game.engine.resume();
+      game.engine.resume('away');
     }
     return () => this.unsubscribe(game, sub);
   }
@@ -283,6 +283,13 @@ export class GameManager {
     if (!found.ok) return found;
     const res = found.game.engine.postChat(found.seat, typeof text === 'string' ? text : '', typeof to === 'number' ? to : null);
     return res.ok ? res : { ok: false, status: 409, error: res.error };
+  }
+
+  /** The human has read what an AI just said ("read at my own pace"): carry on. */
+  continueReading(gameId: string, token: string): SubmitResult {
+    const found = this.humanSeat(gameId, token);
+    if (!found.ok) return found;
+    return found.game.engine.resume('reading') ? { ok: true } : { ok: false, status: 409, error: 'The game is not waiting for you to read.' };
   }
 
   /** A human contestant has nothing more to say in this chat. */
@@ -356,6 +363,7 @@ export class GameManager {
       reflectSeconds: clamp(o.reflectSeconds, 0, 300, DEFAULT_OPTIONS.reflectSeconds),
       chatMaxMessages: clamp(o.chatMaxMessages, 2, 40, DEFAULT_OPTIONS.chatMaxMessages),
       revealModelNames: typeof o.revealModelNames === 'boolean' ? o.revealModelNames : DEFAULT_OPTIONS.revealModelNames,
+      readAtMyPace: typeof o.readAtMyPace === 'boolean' ? o.readAtMyPace : DEFAULT_OPTIONS.readAtMyPace,
       reasoningEffort: effort,
       seed: clamp(o.seed, 0, 2 ** 31 - 1, randomSeed()),
     };
