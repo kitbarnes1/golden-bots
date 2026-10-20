@@ -80,6 +80,9 @@ export interface NewGame {
 
 type Row = Record<string, unknown>;
 
+/** Leaderboard key shared by every human who played without giving a name (it's what "You" used to get). */
+export const UNNAMED_HUMAN_KEY = 'human:you';
+
 export class Db {
   readonly sql: DatabaseSync;
 
@@ -299,7 +302,7 @@ export class Db {
       rows: rows.map(
         (r): LeaderboardRow => ({
           key: r.key as string,
-          label: r.label as string,
+          label: r.key === UNNAMED_HUMAN_KEY ? 'Unnamed players' : (r.label as string),
           kind: r.kind as PlayerKind,
           games: num(r.games),
           finals: num(r.finals),

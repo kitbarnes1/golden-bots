@@ -49,6 +49,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
   const who = (seat: number) => (
     <span className="feed__who" style={color(seat)}>
       {name(seat)}
+      {seat === viewerSeat && <span className="feed__muted"> (you)</span>}
     </span>
   );
 

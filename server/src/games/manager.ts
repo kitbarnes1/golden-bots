@@ -17,7 +17,7 @@ import { LlmAgent } from '../agents/llm.js';
 import { MOCK_STRATEGIES, MockAgent } from '../agents/mock.js';
 import type { Agent } from '../agents/types.js';
 import type { Config } from '../config.js';
-import type { Db } from '../db.js';
+import { UNNAMED_HUMAN_KEY, type Db } from '../db.js';
 import { GameAbortedError, GameEngine, GameFatalError } from '../engine/engine.js';
 import { mulberry32, randomSeed, shuffle } from '../engine/rng.js';
 import type { OpenRouterClient } from '../llm/openrouter.js';
@@ -140,7 +140,8 @@ export class GameManager {
       ranked: !seated.some((s) => s.kind === 'mock'),
       players: players.map((p) => ({
         ...p,
-        playerKey: p.kind === 'human' ? `human:${p.name.toLowerCase()}` : p.model!,
+        // Players who gave no name share one leaderboard entry, whatever the show called them.
+        playerKey: p.kind !== 'human' ? p.model! : seated[p.seat]!.name ? `human:${p.name.toLowerCase()}` : UNNAMED_HUMAN_KEY,
         ...(p.seat === humanSeat ? { playerToken } : {}),
       })),
     });
@@ -380,12 +381,16 @@ export class GameManager {
     // Humans pick first so they keep the name they asked for.
     const names: string[] = [];
     seats.forEach((s, i) => {
-      if (s.kind === 'human') names[i] = unique(s.name ?? 'You');
+      if (s.kind === 'human' && s.name) names[i] = unique(s.name);
     });
     const anon = shuffle(
       ANON_NAMES.filter((n) => !taken.has(n.toLowerCase())),
       rng,
     );
+    // No name given: the show names them, as it does the AIs when model names are hidden.
+    seats.forEach((s, i) => {
+      if (s.kind === 'human' && !s.name) names[i] = unique(anon.shift()!);
+    });
     return seats.map((s, seat): PlayerInfo => {
       if (s.kind === 'human') return { seat, name: names[seat]!, kind: 'human' };
       const label =
@@ -398,7 +403,8 @@ export class GameManager {
   }
 }
 
+/** A human's chosen name, tidied. Empty if they didn't give one. */
 function cleanName(raw: unknown): string {
   const name = typeof raw === 'string' ? raw.replace(/[^\p{L}\p{N} '\-]/gu, '').replace(/\s+/g, ' ').trim() : '';
-  return name.slice(0, 20) || 'You';
+  return name.slice(0, 20);
 }
