@@ -10,6 +10,7 @@ import {
   type GameEvent,
   type MockStrategy,
 } from '@gb/shared';
+import { isRepeat } from '../engine/engine.js';
 import { mulberry32, pickOne, type Rng } from '../engine/rng.js';
 import type { ActMeta, Agent, AgentContext, AgentResult } from './types.js';
 
@@ -129,10 +130,11 @@ export class MockAgent implements Agent {
     const finalLines = this.style === 'bluffer' ? FINAL_LINES_BLUFFER : FINAL_LINES_HONEST;
     if (request.replyTo !== undefined) {
       const who = ctx.players[request.replyTo]?.name ?? 'you';
-      return {
-        response: { say: pickOne(final ? finalLines : replyLines(who), this.rng), to: request.replyTo },
-        thoughts: `${who} spoke to me directly, so I'd better answer.`,
-      };
+      // A human always gets an answer (the engine lets it through even if it repeats).
+      const lines = final ? finalLines : replyLines(who);
+      const say = ctx.players[request.replyTo]?.kind === 'human' ? pickOne(lines, this.rng) : this.fresh(lines, ctx);
+      if (!say) return { response: { pass: true }, thoughts: "I've answered that already." };
+      return { response: { say, to: request.replyTo }, thoughts: `${who} spoke to me directly, so I'd better answer.` };
     }
     // Say a couple of things, then mostly let others talk.
     const opened = ctx.events.findLastIndex((e) => e.type === 'chat_started');
@@ -141,16 +143,28 @@ export class MockAgent implements Agent {
 
     const others = request.participants.filter((s) => s !== ctx.seat);
     if (final) {
+      const say = this.fresh(finalLines, ctx);
+      if (!say) return { response: { pass: true }, thoughts: "I've said my piece." };
       return {
-        response: { say: pickOne(finalLines, this.rng), to: others[0] ?? null },
+        response: { say, to: others[0] ?? null },
         thoughts: `The jackpot is ${formatMoney(ctx.jackpot ?? 0)}.`,
       };
     }
     const suspect = this.weakest(others, ctx);
+    const say = this.fresh(this.discussionLines(ctx), ctx);
+    if (!say) return { response: { pass: true }, thoughts: "I've said my piece." };
     return {
-      response: { say: pickOne(this.discussionLines(ctx), this.rng), to: this.rng() < 0.5 ? suspect : null },
+      response: { say, to: this.rng() < 0.5 ? suspect : null },
       thoughts: `${ctx.players[suspect]?.name} looks like the weak link.`,
     };
+  }
+
+  /** A line not already said in this conversation (the engine treats repeats as passes), or null. */
+  private fresh(lines: string[], ctx: AgentContext): string | null {
+    const opened = ctx.events.findLastIndex((e) => e.type === 'chat_started');
+    const said = ctx.events.slice(opened + 1).flatMap((e) => (e.type === 'speech' && e.seat === ctx.seat ? [e.say] : []));
+    const unused = lines.filter((l) => !isRepeat(said, l));
+    return unused.length ? pickOne(unused, this.rng) : null;
   }
 
   private discussionLines(ctx: AgentContext): string[] {
@@ -193,6 +207,8 @@ const replyLines = (who: string) => [
   `${who}, fair question. My back row is exactly what I said it was.`,
   `Come on ${who}, I've been straight with you all game.`,
   `${who}, I could ask you the same thing.`,
+  `Look at my front row, ${who}. Does that seem like someone who needs to lie?`,
+  `I'm not hiding anything, ${who}. Ask the others where the Killers really are.`,
 ];
 
 const PLEA_LINES = [

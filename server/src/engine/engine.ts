@@ -99,6 +99,11 @@ const HUMAN_MIN_GAP_MS = 1000;
  */
 const REPEAT_THRESHOLD = 0.55;
 
+/** Does this line say again what the speaker already said in this chat? */
+export function isRepeat(before: readonly string[], say: string): boolean {
+  return before.some((b) => overlap(b, say) >= REPEAT_THRESHOLD);
+}
+
 /** How much two messages share their words (Dice coefficient, 0 to 1). */
 export function overlap(a: string, b: string): number {
   const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9£]+/g, ' ').split(' ').filter((w) => w.length > 1));
@@ -659,7 +664,9 @@ export class GameEngine {
         });
         const say = res.kind === 'chat' ? res.say : null;
         // Saying the same thing again adds nothing, so it counts as a pass and the chat can wind up.
-        const repeat = say !== null && (floor.said.get(next) ?? []).some((before) => overlap(before, say) >= REPEAT_THRESHOLD);
+        // Except when a human asked: they get their answer, even if it's one the AI has given before.
+        const answeringHuman = askedBy !== undefined && this.isHuman(askedBy);
+        const repeat = say !== null && !answeringHuman && isRepeat(floor.said.get(next) ?? [], say);
         if (res.kind === 'chat' && say && !repeat) {
           this.recordChat(floor, next, say, res.to);
         } else {
