@@ -22,6 +22,11 @@ curl -fsSL "https://github.com/docker/compose/releases/download/${compose_versio
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 docker compose version
 
+# --- Automatic security updates (daily) -------------------------------------
+dnf install -y dnf-automatic
+sed -i 's/^upgrade_type *=.*/upgrade_type = security/' /etc/dnf/automatic.conf
+systemctl enable --now dnf-automatic-install.timer
+
 # --- Data volume (survives instance replacement) -----------------------------
 DEVICE=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_id}
 for _ in $(seq 1 120); do

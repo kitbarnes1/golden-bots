@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
+import { clientIp } from './limits.js';
 
 const COOKIE = 'gb_session';
 const SESSION_MS = 30 * 24 * 60 * 60_000;
@@ -23,7 +24,7 @@ export type LoginResult =
  */
 export class AdminAuth {
   private readonly key: Buffer;
-  private readonly fails = new Map<string, { count: number; lockedUntil: number }>();
+  private readonly fails = new Map<string, { count: number; lockedUntil: number; lastFail: number }>();
   private siteFails: number[] = [];
   private siteLockedUntil = 0;
 
@@ -53,8 +54,10 @@ export class AdminAuth {
     const now = this.now();
     if (this.siteLockedUntil > now) return locked(this.siteLockedUntil - now);
     const ip = clientIp(req);
-    const entry = this.fails.get(ip) ?? { count: 0, lockedUntil: 0 };
+    const entry = this.fails.get(ip) ?? { count: 0, lockedUntil: 0, lastFail: 0 };
     if (entry.lockedUntil > now) return locked(entry.lockedUntil - now);
+    // A few typos spread over days shouldn't add up to a lockout.
+    if (now - entry.lastFail > IP_LOCK_MS) entry.count = 0;
 
     if (typeof password === 'string' && sameSecret(password, this.password)) {
       this.fails.delete(ip);
@@ -62,6 +65,7 @@ export class AdminAuth {
     }
 
     entry.count++;
+    entry.lastFail = now;
     if (entry.count >= IP_MAX_FAILS) {
       entry.count = 0;
       entry.lockedUntil = now + IP_LOCK_MS;
@@ -91,7 +95,7 @@ export class AdminAuth {
   }
 
   private forgetOldFailures(now: number): void {
-    for (const [ip, e] of this.fails) if (e.lockedUntil <= now) this.fails.delete(ip);
+    for (const [ip, e] of this.fails) if (e.lockedUntil <= now && now - e.lastFail > IP_LOCK_MS) this.fails.delete(ip);
   }
 }
 
@@ -118,12 +122,6 @@ function readCookie(req: FastifyRequest, name: string): string | undefined {
     if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
   }
   return undefined;
-}
-
-/** Behind the Cloudflare tunnel the visitor's address arrives in CF-Connecting-IP. */
-function clientIp(req: FastifyRequest): string {
-  const cf = req.headers['cf-connecting-ip'];
-  return typeof cf === 'string' && cf ? cf : req.ip;
 }
 
 function isHttps(req: FastifyRequest): boolean {

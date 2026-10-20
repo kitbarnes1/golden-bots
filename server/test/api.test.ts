@@ -13,6 +13,7 @@ import { config, type Config } from '../src/config.js';
 import { Db } from '../src/db.js';
 import { GameManager } from '../src/games/manager.js';
 import { ModelCatalog } from '../src/models.js';
+import type { LimitOptions } from '../src/limits.js';
 
 const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 const mocks = ['mock/honest', 'mock/bluffer', 'mock/chaos', 'mock/honest'];
@@ -21,12 +22,15 @@ let app: FastifyInstance;
 let db: Db;
 let manager: GameManager;
 
-async function setup(overrides: Partial<Config> = {}) {
+/** Tests poll fast from one address, so they get room the real limits wouldn't give. */
+const ROOMY: LimitOptions = { perMinute: 1_000_000, streamsPerVisitor: 1000, streamsTotal: 1000 };
+
+async function setup(overrides: Partial<Config> = {}, limits: LimitOptions = ROOMY) {
   const cfg: Config = { ...config, mockDelayMs: 0, adminPassword: '', webDist: '/nonexistent', ...overrides };
   db = new Db(':memory:');
   const catalog = new ModelCatalog(null, cfg.featuredModels, quiet);
   manager = new GameManager(db, cfg, null, catalog, quiet);
-  app = await buildApp({ cfg, db, manager, catalog, hasOpenRouterKey: false, logger: false });
+  app = await buildApp({ cfg, db, manager, catalog, hasOpenRouterKey: false, logger: false, limits });
 }
 
 async function waitFor<T>(fn: () => T | undefined | false, timeoutMs = 5000): Promise<T> {
@@ -285,6 +289,30 @@ describe('API', () => {
     expect(seqs).toEqual(seqs.map((_, i) => i));
     expect(text).toContain('event: status');
     expect(text).toMatch(/event: end\ndata: \{"status":"finished"\}/);
+  });
+
+  it('sends browser security headers on every response', async () => {
+    const res = await app.inject('/api/info');
+    expect(res.headers['content-security-policy']).toContain("script-src 'self'");
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+    expect((await app.inject('/nope')).headers['x-frame-options']).toBe('DENY');
+  });
+
+  it('limits how fast one visitor can call the API, per Cloudflare visitor address', async () => {
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    await setup({}, { perMinute: 3, streamsPerVisitor: 1, streamsTotal: 1 });
+    const from = (ip: string) => ({ headers: { 'cf-connecting-ip': ip } });
+    const codes = [];
+    for (let i = 0; i < 4; i++) codes.push((await app.inject({ url: '/api/info', ...from('6.6.6.6') })).statusCode);
+    expect(codes).toEqual([200, 200, 200, 429]);
+    expect((await app.inject({ url: '/api/info', ...from('7.7.7.7') })).statusCode).toBe(200);
+    // The health check (used by Docker) is never limited.
+    expect((await app.inject({ url: '/healthz', ...from('6.6.6.6') })).statusCode).toBe(200);
   });
 
   it('sends plain-http visitors (via Cloudflare) to https, and asks browsers to stay there', async () => {

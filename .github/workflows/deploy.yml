@@ -22,27 +22,27 @@ jobs:
     if: vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
 
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/arm64
@@ -59,11 +59,17 @@ jobs:
           TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # Make sure security updates install themselves daily (dnf-automatic),
+          # including on servers built before that was in user-data. Harmless to repeat.
+          PARAMS=$(jq -n --arg tag "$TAG" '{commands: [
+            "(rpm -q dnf-automatic >/dev/null || dnf -y -q install dnf-automatic) && sed -i \"s/^upgrade_type *=.*/upgrade_type = security/\" /etc/dnf/automatic.conf && systemctl enable --now dnf-automatic-install.timer || echo \"Could not set up automatic updates\"",
+            "/opt/golden-balls/deploy.sh \($tag)"
+          ]}')
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
             --comment "Deploy $TAG" \
-            --parameters "commands=[\"/opt/golden-balls/deploy.sh $TAG\"]" \
+            --parameters "$PARAMS" \
             --query Command.CommandId --output text)
           echo "SSM command: $COMMAND_ID"
           for _ in $(seq 1 60); do
