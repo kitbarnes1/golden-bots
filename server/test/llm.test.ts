@@ -98,7 +98,7 @@ describe('LlmAgent', () => {
     expect(result.reasoning).toBe('native reasoning');
     expect(result.usage?.costUsd).toBeCloseTo(0.001);
     expect(calls[0]!.reasoningEffort).toBe('low');
-    expect(calls[0]!.messages[0]!.content).toContain('Golden Balls');
+    expect(calls[0]!.messages[0]!.content).toContain('Golden Bots');
   });
 
   it('asks again after an unusable reply, then gives up with usage attached', async () => {

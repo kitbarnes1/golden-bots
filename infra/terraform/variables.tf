@@ -37,7 +37,7 @@ variable "domain" {
 variable "subdomain" {
   description = "The app is served at <subdomain>.<domain>."
   type        = string
-  default     = "goldenballs"
+  default     = "goldenbots"
 }
 
 variable "cloudflare_account_id" {
@@ -75,13 +75,13 @@ variable "extra_app_env" {
 
 variable "github_oidc_subject_prefix" {
   description = <<-EOT
-    Start of the "sub" claim in this repo's GitHub OIDC tokens. Repos using GitHub's
-    immutable subjects identify themselves by id ("repo:owner@123/name@456"); older
-    ones by name ("repo:owner/name"). Check with:
+    Start of the "sub" claim in your repo's GitHub OIDC tokens: only this repo can
+    deploy. Repos using GitHub's immutable subjects identify themselves by id
+    ("repo:owner@123/name@456"); older ones by name ("repo:owner/name"). Check with:
     gh api repos/OWNER/REPO/actions/oidc/customization/sub
+    It includes the repo's name, so update it (and apply) if you rename the repo.
   EOT
   type        = string
-  default     = "repo:kitbarnes1@54220514/golden_balls@1419212821"
 }
 
 variable "github_deploy_branch" {

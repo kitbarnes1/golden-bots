@@ -13,7 +13,7 @@ const client = config.openRouterApiKey
       apiKey: config.openRouterApiKey,
       baseUrl: config.openRouterBaseUrl,
       appUrl: config.publicUrl,
-      appName: 'Golden Balls AI',
+      appName: 'Golden Bots',
       timeoutMs: config.llmTimeoutMs,
       maxRetries: config.llmMaxRetries,
     })

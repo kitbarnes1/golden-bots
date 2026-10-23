@@ -1,8 +1,8 @@
 import type { Ball, ClaimValue } from './types.js';
 
 /**
- * The Golden Bank: 100 cash balls from £10 to £75,000, weighted towards
- * smaller amounts like the TV show. [value, how many balls]
+ * The bank: 100 cash balls from £10 to £75,000, weighted towards smaller
+ * amounts as on the TV show. [value, how many balls]
  */
 export const GOLDEN_BANK: ReadonlyArray<readonly [number, number]> = [
   [10, 4],

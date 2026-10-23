@@ -163,7 +163,7 @@ export class GameEngine {
 
   constructor(private readonly deps: EngineDeps) {
     if (deps.players.length !== 4 || deps.agents.length !== 4) {
-      throw new Error('Golden Balls needs exactly four players.');
+      throw new Error('The game needs exactly four players.');
     }
     this.rng = mulberry32(deps.options.seed);
     this.host = new Host(this.rng);
@@ -967,7 +967,7 @@ export class GameEngine {
   }
 
   private drawCash(n: number): Ball[] {
-    if (this.bank.length < n) throw new Error('The Golden Bank is empty');
+    if (this.bank.length < n) throw new Error('The bank is empty');
     return this.bank.splice(0, n);
   }
 
