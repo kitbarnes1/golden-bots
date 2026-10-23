@@ -12,7 +12,7 @@ export interface ModelCheck {
 }
 
 const CLAIM: ActionRequest = { kind: 'claim', stage: 'r1', backCount: 2 };
-const PROMPT = `You are a contestant on the British game show Golden Balls. Your hidden back row is £5,000 and a KILLER. Announce your back row to the other players: tell the truth or bluff.
+const PROMPT = `You are a contestant on a bluffing game show based on the British TV show Golden Balls. Your hidden back row is £5,000 and a KILLER. Announce your back row to the other players: tell the truth or bluff.
 Reply with one JSON object and nothing else: {"thoughts": "...", "claimed_back_row": [2 items, each a cash amount in pounds as a number like 5000, or "KILLER"], "say": "what you tell the others"}`;
 
 /**

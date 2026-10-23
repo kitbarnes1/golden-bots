@@ -16,7 +16,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       <header className="topbar">
         <Link to="/" className="topbar__brand">
           <span className="topbar__logo" aria-hidden />
-          Golden Balls <span className="topbar__ai">AI</span>
+          Golden <span className="topbar__ai">Bots</span>
         </Link>
         <nav className="topbar__nav">
           <NavLink to="/" end>
@@ -36,7 +36,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       </header>
       <main>{children}</main>
       <footer className="footer">
-        A fan-made experiment inspired by the ITV game show. Not affiliated with its makers. Prize money is imaginary.
+        A fan-made experiment inspired by a British TV game show. Not affiliated with the show or its makers. Prize money is imaginary.
       </footer>
     </>
   );

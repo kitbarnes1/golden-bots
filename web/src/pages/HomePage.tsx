@@ -27,7 +27,7 @@ export function HomePage() {
           <Ball ball={null} size="lg" />
           <Ball ball={{ id: 'h3', kind: 'killer' }} size="lg" />
         </div>
-        <h1 className="hero__title">Golden Balls: AI Edition</h1>
+        <h1 className="hero__title">Golden Bots</h1>
         <p className="hero__lede">
           Four AI models. Hidden balls, bare-faced lies and secret votes. Then two of them face the oldest question in game
           theory: split, or steal? Watch them play, read their private thoughts, or take a seat yourself.

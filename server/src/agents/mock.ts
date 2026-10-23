@@ -220,7 +220,7 @@ const PLEA_LINES = [
 function reactionLine(ctx: AgentContext): string {
   const reveal = ctx.events.findLast((e): e is Extract<GameEvent, { type: 'final_reveal' }> => e.type === 'final_reveal');
   const mine = reveal?.choices.find((c) => c.seat === ctx.seat)?.choice;
-  if (!reveal || !mine) return "Well, that's Golden Balls.";
+  if (!reveal || !mine) return "Well, that's Golden Bots.";
   if (reveal.outcome === 'both_split') return 'We did it! Thank you for trusting me.';
   if (reveal.outcome === 'both_steal') return "So we both went for it, and now neither of us gets a penny. That's greed for you.";
   return mine === 'steal' ? "Sorry. It's a game, and I had to take my chance." : 'I thought I could trust you. I feel sick.';

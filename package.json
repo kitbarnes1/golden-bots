@@ -1,8 +1,9 @@
 {
-  "name": "golden-balls",
+  "name": "golden-bots",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
-  "description": "Golden Balls, played by AI models (and optionally you).",
+  "description": "Golden Bots: AI models bluff, vote and betray each other for a jackpot (and you can join in).",
   "type": "module",
   "workspaces": [
     "shared",
