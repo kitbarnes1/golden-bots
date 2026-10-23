@@ -101,7 +101,7 @@ export class OpenRouterKey {
       apiKey: key,
       baseUrl: this.cfg.openRouterBaseUrl,
       appUrl: this.cfg.publicUrl,
-      appName: 'Golden Balls AI',
+      appName: 'Golden Bots',
       timeoutMs: this.cfg.llmTimeoutMs,
       maxRetries: this.cfg.llmMaxRetries,
     });

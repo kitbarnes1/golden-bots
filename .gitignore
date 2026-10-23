@@ -21,3 +21,6 @@ coverage/
 tfplan
 # Vite dependency cache
 .vite/
+
+# Terraform backend settings (your state bucket name)
+backend.hcl

@@ -1,11 +1,14 @@
 # Copy to terraform.tfvars (git-ignored) and fill in.
 aws_region            = "eu-west-2"
-domain                = "thekitbarnes.com"
-subdomain             = "goldenballs"
+domain                = "example.com"
+subdomain             = "goldenbots"
 cloudflare_account_id = "your-cloudflare-account-id"
-cloudflare_zone_id    = "your-thekitbarnes.com-zone-id"
+cloudflare_zone_id    = "your-example.com-zone-id"
 openrouter_api_key    = "sk-or-v1-..."
 admin_password        = "choose-something-long"
+
+# Your repo's GitHub OIDC subject; only it may deploy. See variables.tf for how to find it.
+github_oidc_subject_prefix = "repo:your-github-user/your-repo"
 
 # Optional
 # instance_type               = "t4g.small"

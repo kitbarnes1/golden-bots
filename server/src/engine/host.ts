@@ -11,17 +11,17 @@ export class Host {
 
   welcome(names: string[]): string {
     return this.one(
-      `Good evening and welcome to Golden Balls! Tonight's contestants are ${describeList(names)}. One of them could leave with a life-changing sum. Or nothing at all.`,
-      `Welcome to Golden Balls, the show where trust is everything and nothing. Please welcome ${describeList(names)}!`,
+      `Good evening and welcome to Golden Bots! Tonight's contestants are ${describeList(names)}. One of them could leave with a life-changing sum. Or nothing at all.`,
+      `Welcome to Golden Bots, the show where trust is everything and nothing. Please welcome ${describeList(names)}!`,
     );
   }
 
   round1(): string {
-    return 'Twelve cash balls from the Golden Bank, plus four Killers. Each of you has two balls on your front row and two on your back row. Take a peek at your back row, and let nobody else see.';
+    return 'Twelve cash balls from the bank, plus four Killers. Each of you has two balls on your front row and two on your back row. Take a peek at your back row, and let nobody else see.';
   }
 
   round2(): string {
-    return 'Your balls go back in the machine with two more cash balls from the Golden Bank and one more Killer. This time you each get two on the front and three on the back. Have a look.';
+    return 'Your balls go back in the machine with two more cash balls from the bank and one more Killer. This time you each get two on the front and three on the back. Have a look.';
   }
 
   askClaims(): string {

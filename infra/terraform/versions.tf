@@ -17,9 +17,10 @@ terraform {
   }
 
   # State holds your API keys (they're passed in as variables), so it lives in
-  # a private, versioned bucket. To use your own, change the bucket name.
+  # a private, versioned bucket. Its name goes in backend.hcl (git-ignored; copy
+  # backend.hcl.example), and you initialise with:
+  #   terraform init -backend-config=backend.hcl
   backend "s3" {
-    bucket       = "golden-balls-tfstate-376181815265"
     key          = "golden-balls/terraform.tfstate"
     region       = "eu-west-2"
     use_lockfile = true
