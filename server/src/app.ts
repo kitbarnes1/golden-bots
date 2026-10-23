@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import type { CreateGameRequest, GameDetail, HumanActionRequest, ServerInfo } from '@gb/shared';
+import type { ApiKeyStatus, CreateGameRequest, GameDetail, HumanActionRequest, ServerInfo } from '@gb/shared';
 import { canSee } from '@gb/shared';
 import { MOCK_STRATEGIES } from './agents/mock.js';
+import type { OpenRouterKey } from './apiKey.js';
 import { AdminAuth } from './auth.js';
 import { clientIp, RequestLimiter, type LimitOptions } from './limits.js';
 import type { Config } from './config.js';
@@ -17,7 +18,7 @@ export interface AppDeps {
   db: Db;
   manager: GameManager;
   catalog: ModelCatalog;
-  hasOpenRouterKey: boolean;
+  openRouterKey: OpenRouterKey;
   logger?: boolean | object;
   /** Request and stream caps (tests use small ones). */
   limits?: LimitOptions;
@@ -50,7 +51,7 @@ const SECURITY_HEADERS = {
 const HEARTBEAT_MS = 15_000;
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
-  const { cfg, db, manager, catalog } = deps;
+  const { cfg, db, manager, catalog, openRouterKey } = deps;
   const app = Fastify({
     logger: deps.logger ?? {
       serializers: {
@@ -66,9 +67,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     const status = err instanceof HttpError ? err.statusCode : ((err as { statusCode?: number }).statusCode ?? 500);
-    if (status >= 500) app.log.error(err);
+    // Our own HttpErrors are written for the visitor (such as OpenRouter being down); any other 500 is a bug.
+    const expose = err instanceof HttpError || status < 500;
+    if (!expose) app.log.error(err);
     const message = err instanceof Error ? err.message : String(err);
-    void reply.status(status).send({ error: status >= 500 ? 'Internal server error' : message });
+    void reply.status(status).send({ error: expose ? message : 'Internal server error' });
   });
 
   // Behind Cloudflare, send plain-http visitors to https so the login never travels
@@ -108,7 +111,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/healthz', async () => ({ ok: true }));
 
   app.get('/api/info', async (): Promise<ServerInfo> => ({
-    hasOpenRouterKey: deps.hasOpenRouterKey,
+    hasOpenRouterKey: openRouterKey.client !== null,
     requiresAdmin: Boolean(cfg.adminPassword),
     maxConcurrentGames: cfg.maxConcurrentGames,
     runningGames: manager.runningCount,
@@ -283,6 +286,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (manager.isRunning(id)) throw new HttpError(409, 'Stop the game before deleting it.');
     if (!db.deleteGame(id)) throw new HttpError(404, 'Game not found.');
     return { ok: true };
+  });
+
+  // Settings (admin only). Only whether a key is set, where from and its last 4 characters ever come back.
+  app.get('/api/settings/openrouter-key', async (req): Promise<ApiKeyStatus> => {
+    requireAdmin(req);
+    return openRouterKey.status();
+  });
+
+  app.put('/api/settings/openrouter-key', async (req): Promise<ApiKeyStatus> => {
+    requireAdmin(req);
+    return openRouterKey.save((req.body as { key?: unknown } | undefined)?.key);
+  });
+
+  app.delete('/api/settings/openrouter-key', async (req): Promise<ApiKeyStatus> => {
+    requireAdmin(req);
+    return openRouterKey.remove();
   });
 
   app.get('/api/leaderboard', async (req) => {

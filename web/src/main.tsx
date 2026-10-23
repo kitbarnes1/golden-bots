@@ -6,6 +6,7 @@ import { GamesPage } from './pages/GamesPage';
 import { HomePage } from './pages/HomePage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { LoginPage } from './pages/LoginPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { AuthProvider, useAuth } from './lib/auth';
 import './styles.css';
 
@@ -24,6 +25,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </NavLink>
           <NavLink to="/leaderboard">Leaderboard</NavLink>
           <NavLink to="/games">Games</NavLink>
+          {auth.canAdmin && <NavLink to="/settings">Settings</NavLink>}
           {auth.required &&
             (auth.loggedIn ? (
               <button type="button" className="topbar__logout" onClick={() => void auth.logout()}>
@@ -62,6 +64,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/games" element={<GamesPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Layout>

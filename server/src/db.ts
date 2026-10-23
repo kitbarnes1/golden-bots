@@ -68,6 +68,13 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (game_id, seq)
   );
   `,
+  `
+  CREATE TABLE settings (
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 export interface NewGame {
@@ -335,6 +342,24 @@ export class Db {
       ),
       totalGames: totalGames.n,
     };
+  }
+
+  getSetting(name: string): string | undefined {
+    const row = this.sql.prepare('SELECT value FROM settings WHERE name = ?').get(name) as { value: string } | undefined;
+    return row?.value;
+  }
+
+  setSetting(name: string, value: string): void {
+    this.sql
+      .prepare(
+        `INSERT INTO settings (name, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(name, value, Date.now());
+  }
+
+  deleteSetting(name: string): void {
+    this.sql.prepare('DELETE FROM settings WHERE name = ?').run(name);
   }
 
   /** Consistent online backup (used by the backup script). */

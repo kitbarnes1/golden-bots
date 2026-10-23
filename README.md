@@ -41,11 +41,14 @@ Needs Node 22.13 or newer.
 
 ```bash
 npm install
-cp .env.example .env      # add OPENROUTER_API_KEY to use real models (optional)
 npm run dev               # API on :3000, web app on http://localhost:5173
 ```
 
-Without an API key only the mock players are offered. Other commands:
+Then open the app, go to **Settings** and paste your [OpenRouter API key](https://openrouter.ai/keys).
+It's checked with OpenRouter, stored encrypted, and AI contestants are available straight away, no
+restart needed. Until then only the mock players are offered. (You can also put `OPENROUTER_API_KEY`
+in `.env` instead: `cp .env.example .env`. The environment variable always wins over a key saved in
+Settings.) Other commands:
 
 ```bash
 npm test                  # engine + API tests (vitest)
@@ -84,8 +87,8 @@ All settings are environment variables (see `.env.example`).
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENROUTER_API_KEY` | – | Enables AI contestants. |
-| `ADMIN_PASSWORD` | – | Log in with it on the **Log in** page to start, stop or delete games. **Set this in production**, otherwise anyone can spend your credits. Watching and the leaderboard stay public. The login is a 30-day HttpOnly session cookie (the password is never stored in the browser); 5 wrong guesses lock that visitor out for 15 minutes, and 30 in an hour from anywhere pause all logins for 30 minutes. Changing the password signs everyone out. |
+| `OPENROUTER_API_KEY` | – | Enables AI contestants. Optional: you can paste a key on the **Settings** page instead. When this is set it always wins, and Settings can't change it. |
+| `ADMIN_PASSWORD` | – | Log in with it on the **Log in** page to start, stop or delete games and to change Settings. **Set this in production**, otherwise anyone can spend your credits or swap your API key. Watching and the leaderboard stay public. The login is a 30-day HttpOnly session cookie (the password is never stored in the browser); 5 wrong guesses lock that visitor out for 15 minutes, and 30 in an hour from anywhere pause all logins for 30 minutes. Changing the password signs everyone out. |
 | `PUBLIC_URL` | `http://localhost:3000` | Sent to OpenRouter as the app's referer. |
 | `MAX_CONCURRENT_GAMES` | `3` | Games that can run at once. |
 | `FEATURED_MODELS` | automatic | Comma-separated model ids to suggest first in the picker (also used for random lineups and autoplay). Unset: the newest mid-priced model from each major lab. |
@@ -93,7 +96,16 @@ All settings are environment variables (see `.env.example`).
 | `HUMAN_TIMEOUT_MS` | 15 min | How long a human gets per move before autopilot takes over. |
 | `AUTOPLAY_INTERVAL_MINUTES` | `0` (off) | Start an all-AI game every N minutes. |
 | `AUTOPLAY_MODELS` | featured models | Pool to draw autoplay lineups from. |
-| `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. |
+| `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. `encryption.key` (see below) goes in the same folder. |
+
+**A key saved on the Settings page** is checked with OpenRouter's key-info endpoint first (one that
+doesn't work is turned away), then encrypted with AES-256-GCM and stored in the database. The
+encryption key is random and lives in a file of its own, `encryption.key`, next to the database,
+so a copy of the database on its own, such as a backup, can't reveal the API key. (Back the two up
+separately, if at all.) If you move the database without that file, paste the API key in again.
+The key is never sent back to the browser or written to the logs; Settings shows only its last 4
+characters. Saving, replacing or deleting a key takes effect at once, and games already running
+finish with the key they started with.
 
 **What a game costs:** in real games each AI seat used about 75,000 input tokens (every move
 sends the game so far) and 4,000 output tokens; about half of that is the chats, which the chat
@@ -157,7 +169,9 @@ The setup in `infra/terraform` creates:
   - Zone → **DNS** → Edit, for `thekitbarnes.com`
 - Your Cloudflare **account id** and the **zone id** of `thekitbarnes.com` (both on the
   domain's Overview page).
-- An OpenRouter API key (ideally with a credit limit), and a password for starting games.
+- An OpenRouter API key (ideally with a credit limit), and a password for starting games. The key
+  goes into SSM and reaches the app as `OPENROUTER_API_KEY`, so the Settings page shows it as set
+  by the environment and can't change it.
 
 ### 2. Create the infrastructure
 

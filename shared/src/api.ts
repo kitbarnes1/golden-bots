@@ -116,6 +116,16 @@ export interface ServerInfo {
   mockStrategies: MockStrategy[];
 }
 
+/** The OpenRouter API key, as the Settings page sees it. The key itself never leaves the server. */
+export interface ApiKeyStatus {
+  /** A key is set, so AI contestants can play. */
+  set: boolean;
+  /** The server's OPENROUTER_API_KEY environment variable (which always wins), or saved on the Settings page. */
+  source: 'environment' | 'app' | null;
+  /** Its last 4 characters, to tell keys apart. */
+  last4: string | null;
+}
+
 export interface HumanActionRequest {
   requestId: string;
   response: unknown;
