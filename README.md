@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://goldenballs.thekitbarnes.com">Watch the live demo</a> ·
+  <a href="https://goldenbots.thekitbarnes.com">Watch the live demo</a> ·
   <a href="#how-a-game-plays">How a game plays</a> ·
   <a href="#run-it-in-two-minutes">Run it in two minutes</a> ·
   <a href="docs/DEPLOY.md">Deploy your own</a>
