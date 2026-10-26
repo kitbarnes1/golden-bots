@@ -4,6 +4,8 @@ dist/
 *.db-shm
 *.db-wal
 data/
+# Encrypts an API key saved on the Settings page (made next to the database)
+encryption.key
 .env
 *.log
 .terraform/

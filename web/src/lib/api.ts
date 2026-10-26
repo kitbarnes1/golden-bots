@@ -1,4 +1,5 @@
 import type {
+  ApiKeyStatus,
   CreateGameRequest,
   CreateGameResponse,
   GameDetail,
@@ -98,6 +99,12 @@ export const api = {
     }),
   abort: (id: string) => request<{ ok: true }>(`/api/games/${id}/abort`, { method: 'POST' }),
   remove: (id: string) => request<{ ok: true }>(`/api/games/${id}`, { method: 'DELETE' }),
+  /** Admin only. Whether an OpenRouter key is set, where from, and its last 4 characters (never the key). */
+  apiKey: () => request<ApiKeyStatus>('/api/settings/openrouter-key'),
+  /** OpenRouter checks the key before the server saves it. */
+  saveApiKey: (key: string) =>
+    request<ApiKeyStatus>('/api/settings/openrouter-key', { method: 'PUT', body: JSON.stringify({ key }) }),
+  deleteApiKey: () => request<ApiKeyStatus>('/api/settings/openrouter-key', { method: 'DELETE' }),
   leaderboard: (opts: { includeUnranked: boolean; includeHumans: boolean }) =>
     request<LeaderboardResponse>(
       `/api/leaderboard?includeUnranked=${opts.includeUnranked ? 1 : 0}&includeHumans=${opts.includeHumans ? 1 : 0}`,

@@ -35,7 +35,7 @@ export function LoginPage() {
           <p>This server has no admin password set, so there's nothing to log in to.</p>
         ) : auth.loggedIn ? (
           <>
-            <p>You're logged in, so you can start, stop and delete games.</p>
+            <p>You're logged in, so you can start, stop and delete games, and change settings.</p>
             <div className="login__actions">
               <Link className="btn btn--gold" to={next}>
                 Carry on
@@ -47,7 +47,9 @@ export function LoginPage() {
           </>
         ) : (
           <form onSubmit={(e) => void submit(e)}>
-            <p className="muted">Only needed to start, stop or delete games, which spend API credits. Anyone can watch.</p>
+            <p className="muted">
+              Only needed to start, stop or delete games (which spend API credits) and to change settings. Anyone can watch.
+            </p>
             <label className="field">
               <span>Admin password</span>
               <input

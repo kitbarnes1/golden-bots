@@ -84,7 +84,7 @@ describe('OpenRouterClient', () => {
         ? { json: { data: [entry('ok/model:free'), entry('agents-only/model:free')] } }
         : { status: 403, json: { error: { message: 'only available on agentic harnesses' } } };
     const c = client();
-    const catalog = new ModelCatalog(c, [], { warn: () => {} });
+    const catalog = new ModelCatalog(() => c, [], { warn: () => {} });
     expect((await catalog.list()).map((m) => m.id)).toEqual(['agents-only/model:free', 'ok/model:free']);
     await c.chat({ model: 'agents-only/model:free', messages: [] }).catch(() => {});
     expect((await catalog.list()).map((m) => m.id)).toEqual(['ok/model:free']);
@@ -112,7 +112,8 @@ describe('OpenRouterClient', () => {
       if (id === 'good:free') return { ok: true };
       return id === 'busy:free' ? { ok: false, transient: true } : { ok: false };
     };
-    const catalog = new ModelCatalog(client(), [], { warn: () => {} }, check);
+    const c = client();
+    const catalog = new ModelCatalog(() => c, [], { warn: () => {} }, check);
     expect((await catalog.workingFree()).map((m) => m.id)).toEqual(['good:free']);
     // A hard failure leaves the picker; a busy model stays, to be checked again later.
     expect((await catalog.list()).map((m) => m.id)).toEqual(['busy:free', 'good:free']);
@@ -127,7 +128,8 @@ describe('OpenRouterClient', () => {
       if (id === 'slow:free') await new Promise((r) => setTimeout(r, 2000));
       return { ok: true };
     };
-    const catalog = new ModelCatalog(client(), [], { warn: () => {} }, check);
+    const c = client();
+    const catalog = new ModelCatalog(() => c, [], { warn: () => {} }, check);
     const started = Date.now();
     expect((await catalog.workingFree(150)).map((m) => m.id)).toEqual(['quick:free']);
     expect(Date.now() - started).toBeLessThan(1000);
@@ -177,7 +179,7 @@ describe('OpenRouterClient', () => {
       return { status: 404, json: { error: { code: 404, message: 'Provider returned error' } } };
     };
     const c = client({ maxRetries: 1 });
-    const catalog = new ModelCatalog(c, [], { warn: () => {} });
+    const catalog = new ModelCatalog(() => c, [], { warn: () => {} });
     const err = (await c.chat({ model: 'down/model:free', messages: [] }).catch((e: unknown) => e)) as LlmError;
     expect(err.fatal).toBe(false); // a fumble, not the end of the game
     expect(calls).toBe(2); // retried once

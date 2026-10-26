@@ -180,7 +180,12 @@ export function NewGameForm({ info }: { info: ServerInfo }) {
       <h2>Set up a game</h2>
       {!canAi ? (
         <p className="notice">
-          The server has no <code>OPENROUTER_API_KEY</code>, so only the free mock players are available.
+          No OpenRouter API key yet, so only the free mock players are available.{' '}
+          {auth.canAdmin ? (
+            <Link to="/settings">Add your key in Settings</Link>
+          ) : (
+            auth.required && <Link to="/login?next=/settings">Log in to add one</Link>
+          )}
         </p>
       ) : all.length === 0 ? (
         <p className="notice">Couldn't load OpenRouter's model list. You can still type a model id.</p>

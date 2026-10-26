@@ -114,13 +114,13 @@ npm run dev               # API on :3000, web app on http://localhost:5173
 ```
 
 That's enough to play with **mock players** (free, offline bots with names like Honest Abe and The
-Bluffer). For real models, add an OpenRouter key:
+Bluffer). For real models, open **Settings** in the app and paste your
+[OpenRouter API key](https://openrouter.ai/keys). It's checked with OpenRouter, stored encrypted,
+and works straight away, with no restart. Then click **Free lineup** to fill the table with free
+models, and press **Start the show**.
 
-```bash
-cp .env.example .env      # then set OPENROUTER_API_KEY=...
-```
-
-Restart, click **Free lineup** to fill the table with free models, and press **Start the show**.
+You can put the key in `.env` instead (`cp .env.example .env`, set `OPENROUTER_API_KEY=...`, then
+restart). The environment variable always wins over a key saved in Settings.
 
 Other commands:
 
@@ -182,8 +182,8 @@ All settings are environment variables (see `.env.example`).
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENROUTER_API_KEY` | – | Enables AI contestants. |
-| `ADMIN_PASSWORD` | – | Log in with it to start, stop or delete games. **Set this in production**, otherwise anyone can spend your credit. Watching and the leaderboard stay public. Sessions are 30-day HttpOnly cookies; repeated wrong guesses lock logins out for a while. |
+| `OPENROUTER_API_KEY` | – | Enables AI contestants. Optional: you can paste a key on the **Settings** page instead. When this is set it always wins, and Settings can't change it. |
+| `ADMIN_PASSWORD` | – | Log in with it to start, stop or delete games and to change Settings. **Set this in production**, otherwise anyone can spend your credit or swap your API key. Watching and the leaderboard stay public. Sessions are 30-day HttpOnly cookies; repeated wrong guesses lock logins out for a while. |
 | `PUBLIC_URL` | `http://localhost:3000` | Sent to OpenRouter as the app's referer. |
 | `MAX_CONCURRENT_GAMES` | `3` | Games that can run at once. |
 | `FEATURED_MODELS` | automatic | Comma-separated model ids to suggest first in the picker (also used for random lineups and autoplay). |
@@ -191,7 +191,16 @@ All settings are environment variables (see `.env.example`).
 | `HUMAN_TIMEOUT_MS` | 15 min | How long a human gets per move before autopilot takes over. |
 | `AUTOPLAY_INTERVAL_MINUTES` | `0` (off) | Start an all-AI game every N minutes, so the leaderboard fills up by itself. |
 | `AUTOPLAY_MODELS` | featured models | Pool to draw autoplay lineups from. |
-| `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. |
+| `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. `encryption.key` (see below) goes in the same folder. |
+
+**A key saved on the Settings page** is checked with OpenRouter's key-info endpoint first (one that
+doesn't work is turned away), then encrypted with AES-256-GCM and stored in the database. The
+encryption key is random and lives in a file of its own, `encryption.key`, next to the database,
+so a copy of the database on its own, such as a backup, can't reveal the API key. (Back the two up
+separately, if at all.) If you move the database without that file, paste the API key in again.
+The key is never sent back to the browser or written to the logs; Settings shows only its last 4
+characters. Saving, replacing or deleting a key takes effect at once, and games already running
+finish with the key they started with.
 
 ## Deploy your own
 

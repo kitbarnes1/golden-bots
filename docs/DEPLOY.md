@@ -29,7 +29,9 @@ The setup in `infra/terraform` creates:
   - Account → **Cloudflare Tunnel** → Edit
   - Zone → **DNS** → Edit, for your domain
 - Your Cloudflare **account id** and your domain's **zone id** (both on the domain's Overview page).
-- An OpenRouter API key (ideally with a credit limit), and a password for starting games.
+- An OpenRouter API key (ideally with a credit limit), and a password for starting games. The key
+  goes into SSM and reaches the app as `OPENROUTER_API_KEY`, so the Settings page shows it as set
+  by the environment and can't change it.
 - A private S3 bucket with versioning on, for Terraform's state. The state holds your API key and
   password, so keep it private:
 
@@ -88,8 +90,9 @@ deploy.
 
 No Terraform needed. Create a tunnel in the Cloudflare dashboard (Zero Trust → Networks →
 Tunnels) and add a public hostname pointing at `http://app:3000`. Put its token in `.env` as
-`CLOUDFLARE_TUNNEL_TOKEN` along with your other settings (at least `OPENROUTER_API_KEY`,
-`ADMIN_PASSWORD` and `PUBLIC_URL`), then:
+`CLOUDFLARE_TUNNEL_TOKEN` along with your other settings (at least `ADMIN_PASSWORD` and
+`PUBLIC_URL`, plus `OPENROUTER_API_KEY` unless you'd rather paste the key on the Settings page),
+then:
 
 ```bash
 docker compose --profile tunnel up -d --build
@@ -101,9 +104,9 @@ HTTPS reverse proxy on the same machine.
 ## Before you put it on the internet
 
 - **Set `ADMIN_PASSWORD`.** Without it, anyone who finds the site can start games on your
-  OpenRouter credit. With it, watching games and the leaderboard stay public, and starting,
-  stopping or deleting games needs the login (a 30-day HttpOnly session cookie, with lockouts
-  after repeated wrong guesses).
+  OpenRouter credit, or replace your key on the Settings page. With it, watching games and the
+  leaderboard stay public, and starting, stopping or deleting games and changing Settings need the
+  login (a 30-day HttpOnly session cookie, with lockouts after repeated wrong guesses).
 - **Give your OpenRouter key a credit limit** in the OpenRouter dashboard.
 - Requests are rate-limited per visitor, security headers (including a strict
   Content-Security-Policy) are on, and plain HTTP is redirected to HTTPS when behind Cloudflare.

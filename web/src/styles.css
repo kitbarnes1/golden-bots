@@ -1730,6 +1730,25 @@ textarea {
   display: flex;
   gap: 10px;
 }
+/* Settings */
+.settings__card {
+  max-width: 560px;
+  margin: 40px auto;
+}
+.settings__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.settings__done {
+  color: var(--green);
+}
 .newgame__login {
   display: flex;
   flex-direction: column;

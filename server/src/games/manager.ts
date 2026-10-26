@@ -80,7 +80,8 @@ export class GameManager {
   constructor(
     private readonly db: Db,
     private readonly cfg: Config,
-    private readonly client: OpenRouterClient | null,
+    /** The client for the current OpenRouter key (null without one). Each game keeps the one it started with. */
+    private readonly openRouter: () => OpenRouterClient | null,
     private readonly catalog: ModelCatalog,
     private readonly log: Logger,
   ) {}
@@ -101,7 +102,8 @@ export class GameManager {
     if (this.running.size >= this.cfg.maxConcurrentGames) {
       throw new HttpError(429, `There are already ${this.running.size} games in progress. Try again shortly.`);
     }
-    const seats = this.validateSeats(req.seats);
+    const client = this.openRouter();
+    const seats = this.validateSeats(req.seats, client !== null);
     const options = this.validateOptions(req.options);
     const rng = mulberry32(options.seed ^ 0x5eed);
 
@@ -126,7 +128,7 @@ export class GameManager {
         return human;
       }
       if (spec.kind === 'mock') return new MockAgent(spec.model!, agentSeed, this.cfg.mockDelayMs);
-      return new LlmAgent(this.client!, spec.model!, {
+      return new LlmAgent(client!, spec.model!, {
         reasoningEffort: options.reasoningEffort,
         maxTokens: this.cfg.llmMaxTokens,
         repairAttempts: 1,
@@ -327,7 +329,7 @@ export class GameManager {
 
   // ------------------------------------------------------------ validation
 
-  private validateSeats(seats: unknown): SeatSpec[] {
+  private validateSeats(seats: unknown, hasKey: boolean): SeatSpec[] {
     if (!Array.isArray(seats) || seats.length !== 4) throw new HttpError(400, 'Choose exactly four contestants.');
     const specs = seats.map((raw): SeatSpec => {
       const s = (raw ?? {}) as Partial<SeatSpec>;
@@ -340,7 +342,7 @@ export class GameManager {
         if (typeof s.model !== 'string' || !MODEL_ID.test(s.model)) {
           throw new HttpError(400, `"${String(s.model)}" is not a valid OpenRouter model id.`);
         }
-        if (!this.client) throw new HttpError(400, 'OPENROUTER_API_KEY is not configured on the server.');
+        if (!hasKey) throw new HttpError(400, 'No OpenRouter API key is set: add one on the Settings page (or set OPENROUTER_API_KEY).');
         return { kind: 'ai', model: s.model };
       }
       throw new HttpError(400, 'Each seat must be ai, human or mock.');

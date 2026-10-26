@@ -64,28 +64,42 @@ export class ModelCatalog {
   /** Results of checkModel, each good until `until`. */
   private readonly checks = new Map<string, ModelCheck & { until: number }>();
   private checking: Promise<void> | null = null;
+  /** The client the checks above were made with. */
+  private checkedWith: OpenRouterClient | null = null;
 
   constructor(
-    private readonly client: OpenRouterClient | null,
+    /** The client for the current OpenRouter key (null without one). It changes when the key is saved or deleted. */
+    private readonly openRouter: () => OpenRouterClient | null,
     /** From FEATURED_MODELS; empty = pick automatically. */
     private readonly configured: string[],
     private readonly log: { warn: (obj: unknown, msg: string) => void },
     private readonly check: typeof checkModel = checkModel,
   ) {}
 
+  /** The current client. After a key change, model checks made with the old key no longer count. */
+  private client(): OpenRouterClient | null {
+    const client = this.openRouter();
+    if (client !== this.checkedWith) {
+      this.checkedWith = client;
+      this.checks.clear();
+      this.checking = null;
+    }
+    return client;
+  }
+
   /**
    * Models that can be picked right now: the catalogue minus any OpenRouter has
    * refused to serve and any that recently failed a check.
    */
   async list(): Promise<ModelOption[]> {
-    if (!this.client) return [];
-    const client = this.client;
+    const client = this.client();
+    if (!client) return [];
     const now = Date.now();
     const failed = (id: string) => {
       const c = this.checks.get(id);
       return c !== undefined && !c.ok && !c.transient && c.until > now;
     };
-    return (await this.listAll()).filter((m) => !client.isUnavailable(m.id) && !failed(m.id));
+    return (await this.listAll(client)).filter((m) => !client.isUnavailable(m.id) && !failed(m.id));
   }
 
   /**
@@ -94,7 +108,7 @@ export class ModelCatalog {
    * slow model can't hold things up; checks still going finish in the background.
    */
   async workingFree(waitMs = 10_000, enough = 4): Promise<ModelOption[]> {
-    if (!this.client) return [];
+    if (!this.client()) return [];
     let done = false;
     void this.checkFree().finally(() => {
       done = true;
@@ -109,20 +123,26 @@ export class ModelCatalog {
 
   /** Check, in parallel, the free models that haven't been checked lately. Cheap to call often. */
   checkFree(): Promise<void> {
-    if (!this.client) return Promise.resolve();
-    this.checking ??= (async () => {
-      const stale = (await this.list()).filter((m) => m.free && !((this.checks.get(m.id)?.until ?? 0) > Date.now()));
-      await this.runChecks(stale.map((m) => m.id));
-    })().finally(() => {
-      this.checking = null;
-    });
+    const client = this.client();
+    if (!client) return Promise.resolve();
+    if (!this.checking) {
+      const run: Promise<void> = (async () => {
+        const stale = (await this.list()).filter((m) => m.free && !((this.checks.get(m.id)?.until ?? 0) > Date.now()));
+        await this.runChecks(client, stale.map((m) => m.id));
+      })().finally(() => {
+        // A key change may have started a fresh round of checks meanwhile.
+        if (this.checking === run) this.checking = null;
+      });
+      this.checking = run;
+    }
     return this.checking;
   }
 
-  private async runChecks(ids: string[]): Promise<void> {
+  private async runChecks(client: OpenRouterClient, ids: string[]): Promise<void> {
     await Promise.all(
       ids.map(async (id) => {
-        const result = await this.check(this.client!, id);
+        const result = await this.check(client, id);
+        if (client !== this.checkedWith) return; // made with a key that has since changed
         const ttl = result.ok || !result.transient ? CHECK_MS : CHECK_RETRY_MS;
         this.checks.set(id, { ...result, until: Date.now() + ttl });
         if (!result.ok) this.log.warn({ model: id, reason: result.reason }, 'Model failed its check');
@@ -130,10 +150,10 @@ export class ModelCatalog {
     );
   }
 
-  private async listAll(): Promise<ModelOption[]> {
+  private async listAll(client: OpenRouterClient): Promise<ModelOption[]> {
     if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache.models;
     if (Date.now() - this.failedAt < RETRY_MS) return this.fallback();
-    this.inflight ??= this.load().finally(() => {
+    this.inflight ??= this.load(client).finally(() => {
       this.inflight = null;
     });
     return this.inflight;
@@ -144,10 +164,10 @@ export class ModelCatalog {
     return this.cache?.models.find((m) => m.id === id)?.name ?? labelFromId(id);
   }
 
-  private async load(): Promise<ModelOption[]> {
+  private async load(client: OpenRouterClient): Promise<ModelOption[]> {
     try {
       // Only list models that can play, so "Free lineup" never draws a music model or a router.
-      const all = (await this.client!.listModels()).filter(canPlay);
+      const all = (await client.listModels()).filter(canPlay);
       const featured = pickFeatured(all, this.configured);
       const rank = new Map(featured.map((id, i) => [id, i]));
       const models = all

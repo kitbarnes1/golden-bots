@@ -20,14 +20,22 @@ function list(name: string, fallback: string[]): string[] {
     .filter(Boolean);
 }
 
+const databasePath = process.env.DATABASE_PATH ?? path.resolve(here, '../../data/golden-balls.db');
+
 export const config = {
   port: int('PORT', 3000),
   host: process.env.HOST ?? '0.0.0.0',
-  databasePath: process.env.DATABASE_PATH ?? path.resolve(here, '../../data/golden-balls.db'),
+  databasePath,
+  /**
+   * Encrypts an OpenRouter key saved on the Settings page. Kept beside the
+   * database rather than in it, so a database backup alone can't reveal the key.
+   */
+  encryptionKeyPath: path.join(path.dirname(databasePath), 'encryption.key'),
   /** Built web app. In the Docker image it sits next to the server bundle. */
   webDist: process.env.WEB_DIST ?? path.resolve(here, '../../web/dist'),
   publicUrl: process.env.PUBLIC_URL ?? 'http://localhost:3000',
 
+  /** Always wins over a key saved on the Settings page. */
   openRouterApiKey: process.env.OPENROUTER_API_KEY ?? '',
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
   llmMaxTokens: int('LLM_MAX_TOKENS', 4096),

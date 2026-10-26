@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type {
@@ -8,12 +10,14 @@ import type {
   LeaderboardResponse,
   ServerInfo,
 } from '@gb/shared';
+import { OpenRouterKey } from '../src/apiKey.js';
 import { buildApp } from '../src/app.js';
 import { config, type Config } from '../src/config.js';
 import { Db } from '../src/db.js';
 import { GameManager } from '../src/games/manager.js';
 import { ModelCatalog } from '../src/models.js';
 import type { LimitOptions } from '../src/limits.js';
+import { SecretBox } from '../src/secretBox.js';
 
 const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 const mocks = ['mock/honest', 'mock/bluffer', 'mock/chaos', 'mock/honest'];
@@ -26,11 +30,12 @@ let manager: GameManager;
 const ROOMY: LimitOptions = { perMinute: 1_000_000, streamsPerVisitor: 1000, streamsTotal: 1000 };
 
 async function setup(overrides: Partial<Config> = {}, limits: LimitOptions = ROOMY) {
-  const cfg: Config = { ...config, mockDelayMs: 0, adminPassword: '', webDist: '/nonexistent', ...overrides };
+  const cfg: Config = { ...config, mockDelayMs: 0, adminPassword: '', openRouterApiKey: '', webDist: '/nonexistent', ...overrides };
   db = new Db(':memory:');
-  const catalog = new ModelCatalog(null, cfg.featuredModels, quiet);
-  manager = new GameManager(db, cfg, null, catalog, quiet);
-  app = await buildApp({ cfg, db, manager, catalog, hasOpenRouterKey: false, logger: false, limits });
+  const openRouterKey = new OpenRouterKey(cfg, db, new SecretBox(path.join(os.tmpdir(), 'gb-api-test-unused.key')), quiet);
+  const catalog = new ModelCatalog(() => null, cfg.featuredModels, quiet);
+  manager = new GameManager(db, cfg, () => null, catalog, quiet);
+  app = await buildApp({ cfg, db, manager, catalog, openRouterKey, logger: false, limits });
 }
 
 async function waitFor<T>(fn: () => T | undefined | false, timeoutMs = 5000): Promise<T> {

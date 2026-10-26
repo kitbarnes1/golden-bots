@@ -203,6 +203,23 @@ export class OpenRouterClient {
   }
 }
 
+/**
+ * Does OpenRouter accept this key? Asks its key-info endpoint, which costs nothing.
+ * `status` is OpenRouter's reply when it isn't a yes, or 0 if it couldn't be reached.
+ */
+export async function checkApiKey(baseUrl: string, apiKey: string): Promise<{ ok: true } | { ok: false; status: number }> {
+  try {
+    const res = await fetch(`${baseUrl}/key`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    await res.body?.cancel();
+    return res.ok ? { ok: true } : { ok: false, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
+}
+
 interface RawModel {
   id: string;
   name?: string;

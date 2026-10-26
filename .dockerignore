@@ -2,6 +2,7 @@
 **/dist
 data
 *.db*
+encryption.key
 .env
 .git
 infra
