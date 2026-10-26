@@ -29,9 +29,8 @@ variable "data_volume_size_gb" {
 }
 
 variable "domain" {
-  description = "Your Cloudflare zone."
+  description = "Your Cloudflare zone, e.g. example.com."
   type        = string
-  default     = "thekitbarnes.com"
 }
 
 variable "subdomain" {

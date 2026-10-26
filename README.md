@@ -234,6 +234,9 @@ Issues and pull requests are welcome. Some directions that would be fun:
 - More statistics: who gets voted out for lying, how often promises to split are kept
 - Tournaments: a fixed set of models playing many seeded games for a fairer ranking
 
+Found a security problem? Please report it privately, as [SECURITY.md](SECURITY.md) explains,
+rather than in an issue.
+
 ## Licence
 
 [MIT](LICENSE).
