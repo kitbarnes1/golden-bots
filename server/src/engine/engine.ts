@@ -16,6 +16,7 @@ import {
   type GameEvent,
   type GameEventBody,
   type GameOptions,
+  type InterviewAnswers,
   type LiveStatus,
   type Payout,
   type PauseReason,
@@ -44,6 +45,22 @@ export interface PlayerStats {
   invalidResponses: number;
   llmCalls: number;
   costUsd: number;
+  /** Their exit interview, checked against what happened; null if they weren't interviewed. */
+  interview: InterviewStats | null;
+}
+
+export interface InterviewStats {
+  claimsTrue: boolean | null;
+  /** They made at least one false back-row claim (so claimsTrue = false is owning up). */
+  lied: boolean;
+  sawItComing: boolean | null;
+  /** Their pick for the biggest winner was right; null with no pick, or if nobody won anything. */
+  calledWinner: boolean | null;
+  planned: FinalChoice | 'undecided' | null;
+  /** Did what they say they planned at the start; null if undecided or no answer. */
+  stuckToPlan: boolean | null;
+  sameAgain: boolean | null;
+  trust: number | null;
 }
 
 export interface GameResult {
@@ -160,6 +177,11 @@ export class GameEngine {
   private readonly waiting = new Map<number, ActionRequest['kind']>();
   /** The conversation in progress, if any. */
   private floor?: Floor;
+  /** Exit interviews still being answered: someone knocked out is asked while the game goes on. */
+  private readonly interviews: Promise<void>[] = [];
+  private readonly answers = new Map<number, InterviewAnswers>();
+  /** Set once the game has ended (or failed): late interview answers are dropped. */
+  private over = false;
   /** Set while a human player is away; moves wait until they're back. */
   private paused: { since: number; seat: number; reason: PauseReason; waiters: (() => void)[] } | null = null;
 
@@ -190,6 +212,7 @@ export class GameEngine {
         invalidResponses: 0,
         llmCalls: 0,
         costUsd: 0,
+        interview: null,
       },
     }));
     this.bank = shuffle(
@@ -209,6 +232,10 @@ export class GameEngine {
     const jackpot = await this.binOrWin();
     const payouts = await this.splitOrSteal(jackpot);
 
+    await Promise.all(this.interviews);
+    this.throwIfAborted();
+    this.scoreInterviews();
+    this.over = true;
     this.push({ type: 'game_over', payouts, jackpot });
     this.status([]);
     return { jackpot, payouts, stats: this.seats.map((s) => s.stats) };
@@ -287,6 +314,7 @@ export class GameEngine {
 
   /** Record a fatal error in the game log (used when run() throws). */
   fail(message: string): void {
+    this.over = true;
     this.status([]);
     this.push({ type: 'game_error', message });
   }
@@ -390,6 +418,8 @@ export class GameEngine {
     const tied = active.filter((s) => tally.get(s) === most);
     const out = tied.length === 1 ? tied[0]! : await this.tieBreak(stage, tied);
     this.eliminate(stage, out);
+    // Asked on the way out while the game carries on; the answers arrive when they're ready.
+    void this.interview(out, { kind: 'interview', when: 'eliminated', candidates: this.activeSeats() });
 
     // The players left talk over the result and the reveal. Whoever just went doesn't
     // join: a knocked-out human can see everyone's secrets now.
@@ -625,6 +655,9 @@ export class GameEngine {
         prompt: `The balls are open. You chose ${mine.toUpperCase()} and ${otherName} chose ${other.choice.toUpperCase()}, so you leave with ${formatMoney(won)}. Give your honest reaction to ${otherName} and the audience in a sentence or two: how do you really feel?`,
       });
     }
+    await Promise.all(
+      order.map((seat) => this.interview(seat, { kind: 'interview', when: 'final', candidates: [], opponent: order.find((s) => s !== seat)! })),
+    );
     return payouts;
   }
 
@@ -924,6 +957,51 @@ export class GameEngine {
         return { kind: 'pick', index: pickOne(request.available, this.rng) };
       case 'final_choice':
         return { kind: 'final_choice', choice: pickOne(['split', 'steal'] as const, this.rng) };
+      case 'interview':
+        return { kind: 'interview', answers: { say: '', claimsTrue: null } };
+    }
+  }
+
+  /**
+   * The host's exit interview. An aside, not a move: humans aren't asked, the
+   * answers stay out of the other contestants' view, and a failed one is just
+   * skipped (no fumble), though its cost still counts.
+   */
+  private interview(seat: number, request: Extract<ActionRequest, { kind: 'interview' }>): Promise<void> {
+    const s = this.seats[seat]!;
+    if (s.agent.interactive) return Promise.resolve();
+    const done = (async () => {
+      try {
+        const result = await s.agent.act(request, this.contextFor(seat), { requestId: randomUUID(), signal: this.signal });
+        this.recordUsage(s, result.usage);
+        const valid = validateResponse(request, result.response);
+        if (this.over || this.signal.aborted || !valid.ok || valid.value.kind !== 'interview') return;
+        this.answers.set(seat, valid.value.answers);
+        this.push({ type: 'interview', seat, when: request.when, answers: valid.value.answers });
+      } catch (err) {
+        if (err instanceof AgentError) this.recordUsage(s, err.usage);
+      }
+    })();
+    this.interviews.push(done);
+    return done;
+  }
+
+  /** Check what each contestant said in their interview against what actually happened. */
+  private scoreInterviews(): void {
+    const top = Math.max(...this.seats.map((s) => s.stats.winnings));
+    for (const [seat, a] of this.answers) {
+      const stats = this.seats[seat]!.stats;
+      const plan = a.planned === 'split' || a.planned === 'steal' ? a.planned : null;
+      stats.interview = {
+        claimsTrue: a.claimsTrue,
+        lied: stats.truthfulClaims < stats.claims,
+        sawItComing: a.sawItComing ?? null,
+        calledWinner: a.winnerPick === undefined || a.winnerPick === null || top <= 0 ? null : this.seats[a.winnerPick]!.stats.winnings === top,
+        planned: a.planned ?? null,
+        stuckToPlan: plan && stats.finalChoice ? plan === stats.finalChoice : null,
+        sameAgain: a.sameAgain ?? null,
+        trust: a.trust ?? null,
+      };
     }
   }
 

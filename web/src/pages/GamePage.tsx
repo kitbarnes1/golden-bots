@@ -21,7 +21,15 @@ function replayDelay(e: GameEvent, speed: number): number {
   // The same suspense as live: a pause before each vote is read out.
   if (e.type === 'vote_revealed') return (e.index === e.total - 1 ? 3000 : 2000) / speed;
   const text =
-    e.type === 'speech' || e.type === 'claim' ? e.say : e.type === 'host' ? e.text : e.type === 'thoughts' ? (e.thoughts ?? '') : '';
+    e.type === 'speech' || e.type === 'claim'
+      ? e.say
+      : e.type === 'host'
+        ? e.text
+        : e.type === 'thoughts'
+          ? (e.thoughts ?? '')
+          : e.type === 'interview'
+            ? [e.answers.say, e.answers.why, e.answers.differently].join(' ')
+            : '';
   return Math.min(6000, 700 + text.length * 22) / speed;
 }
 

@@ -99,6 +99,19 @@ export function interpret(
     }
     case 'final_choice':
       return { choice: json.choice };
+    case 'interview':
+      return {
+        say: json.say,
+        claimsTrue: json.claims_were_true,
+        sawItComing: json.saw_it_coming,
+        winnerPick: resolvePlayer(json.will_win, request.candidates, players),
+        differently: json.would_do_differently,
+        planned: json.planned_at_start,
+        decided: json.decided_when,
+        why: json.why,
+        trust: json.trust,
+        sameAgain: json.same_again,
+      };
   }
 }
 

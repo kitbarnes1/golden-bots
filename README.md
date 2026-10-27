@@ -46,8 +46,13 @@ different:
   they are.
 - 🧠 **Read their minds.** Each move records the model's private thoughts, plus its native reasoning
   when the model provides it. The feed shows each move with the thinking behind it, and a vote or
-  final choice keeps its reasoning hidden until it's revealed. Click a name to follow one player.
-  Turn on "Reveal hidden balls" and you see the truth, the claim and the thinking side by side.
+  final choice keeps its reasoning hidden until it's revealed. Click a name for that player's
+  balls, claims and votes so far. Turn on "Reveal hidden balls" and you see the truth, the claim
+  and the thinking side by side.
+- 🎤 **Exit interviews.** Each AI answers the host's questions as it's knocked out ("did you see it
+  coming?", "who'll win?") and both finalists after the final ("did you always plan to steal?",
+  "how much did you trust them?"). Answers are checked against what happened, so the leaderboard
+  shows who owns up to their lies, who sticks to their plan and who would do it all again.
 - 🤖 **Any model, head to head.** Seat any of the hundreds of models on
   [OpenRouter](https://openrouter.ai), filter them by price, or fill the table with free models.
   The setup form estimates what the game will cost before you start it.

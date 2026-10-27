@@ -66,9 +66,51 @@ export type ActionRequest =
   | { kind: 'vote'; stage: 'r1' | 'r2'; candidates: number[] }
   | { kind: 'tie_decide'; stage: 'r1' | 'r2'; candidates: number[] }
   | { kind: 'pick'; action: BinOrWin; available: number[] }
-  | { kind: 'final_choice' };
+  | { kind: 'final_choice' }
+  /**
+   * The host's questions on the way out (when: 'eliminated') or after the final.
+   * An aside, never part of the game: only AI and mock contestants are asked, and
+   * the answers stay out of everyone else's view of the game.
+   */
+  | { kind: 'interview'; when: 'eliminated' | 'final'; candidates: number[]; opponent?: number };
 
 export type SpeakContext = 'tie_plea' | 'tie_discuss' | 'final_reaction';
+
+/** When a finalist says they made up their mind. */
+export type DecisionPoint = 'before' | 'r1' | 'r2' | 'bow' | 'final_chat' | 'last_moment';
+
+export const DECISION_POINTS: Record<DecisionPoint, string> = {
+  before: 'Before the game',
+  r1: 'In round 1',
+  r2: 'In round 2',
+  bow: 'During Bin or Win',
+  final_chat: 'In the final chat',
+  last_moment: 'At the last moment',
+};
+
+/** Exit interview answers. null (or missing) where a contestant gave no usable answer. */
+export interface InterviewAnswers {
+  /** A sentence or two for the audience. */
+  say: string;
+  /** "Was everything you claimed about your back rows the truth?" */
+  claimsTrue: boolean | null;
+  /** Knocked out: "Did you see it coming?" */
+  sawItComing?: boolean | null;
+  /** Knocked out: who they think will leave with the most money (a seat). */
+  winnerPick?: number | null;
+  /** Knocked out: "What would you do differently?" */
+  differently?: string;
+  /** Finalists: what they meant to choose when the game began. */
+  planned?: FinalChoice | 'undecided' | null;
+  /** Finalists: when they made up their mind. */
+  decided?: DecisionPoint | null;
+  /** Finalists: why they chose as they did. */
+  why?: string;
+  /** Finalists: how much they trusted the other finalist, 1 (not at all) to 5 (completely). */
+  trust?: number | null;
+  /** Finalists: knowing what the other chose, would they choose the same again? */
+  sameAgain?: boolean | null;
+}
 
 export type ActionResponse =
   | { kind: 'claim'; claim: ClaimValue[]; say: string }
@@ -78,7 +120,8 @@ export type ActionResponse =
   | { kind: 'vote'; target: number }
   | { kind: 'tie_decide'; target: number }
   | { kind: 'pick'; index: number; say?: string }
-  | { kind: 'final_choice'; choice: FinalChoice };
+  | { kind: 'final_choice'; choice: FinalChoice }
+  | { kind: 'interview'; answers: InterviewAnswers };
 
 export type GameStatus = 'running' | 'finished' | 'abandoned' | 'error';
 

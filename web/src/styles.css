@@ -1338,6 +1338,160 @@ textarea {
   background: color-mix(in srgb, var(--seat) 18%, var(--bg));
   border-bottom: 1px solid color-mix(in srgb, var(--seat) 45%, transparent);
 }
+
+/* A contestant's card, opened by clicking their name: floats in view wherever you've scrolled. */
+.pcard {
+  --seat: var(--blue);
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--seat) 10%, var(--bg-2));
+  border: 1px solid color-mix(in srgb, var(--seat) 45%, transparent);
+  border-left: 4px solid var(--seat);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  font-size: 0.86rem;
+}
+@media (max-width: 600px) {
+  .pcard {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 65vh;
+  }
+}
+.pcard__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pcard__name {
+  font-weight: 800;
+  font-size: 1rem;
+}
+.pcard__model {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.pcard__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+}
+.pcard__close {
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  background: none;
+  border: 0;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.pcard__status {
+  margin: 4px 0 6px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.pcard__round {
+  border-top: 1px solid var(--line);
+  padding: 6px 0 4px;
+}
+.pcard__label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.pcard__balls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.pcard__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--line-2);
+  margin: 0 3px;
+}
+.pcard__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 4px;
+  color: var(--text-2);
+}
+.pcard__facts .badge {
+  margin-left: 6px;
+}
+
+/* Exit interviews */
+.feed__interview {
+  --seat: var(--blue);
+  border: 1px solid color-mix(in srgb, var(--seat) 40%, transparent);
+  border-left: 3px solid var(--seat);
+  background: color-mix(in srgb, var(--seat) 6%, transparent);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+.feed__interview-head {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.feed__interview-head .feed__who {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.9rem;
+}
+.iv {
+  margin: 6px 0 0;
+  display: grid;
+  gap: 4px;
+}
+.iv__row {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: 8px;
+}
+.iv dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.iv dd {
+  margin: 0;
+}
+.iv dd .badge {
+  margin-left: 6px;
+}
+.iv__trust {
+  color: var(--gold-2);
+  letter-spacing: 2px;
+}
+.iv__trust-off {
+  color: rgba(255, 255, 255, 0.15);
+}
+@media (max-width: 600px) {
+  .iv__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
 .feed__who::before {
   content: '';
   display: inline-block;
@@ -1535,6 +1689,16 @@ textarea {
 .lb__outcomes {
   display: flex;
   gap: 10px;
+}
+.lb__iv-head,
+.lb__iv-note {
+  padding: 0 16px;
+}
+.lb__iv-head {
+  padding-top: 16px;
+}
+.lb__iv-note {
+  margin: 0 0 8px;
 }
 .lb__row--few {
   opacity: 0.55;

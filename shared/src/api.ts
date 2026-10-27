@@ -72,6 +72,29 @@ export interface LeaderboardRow {
   invalidResponses: number;
   costUsd: number;
   lastPlayed: number;
+  /** Exit interviews given. The pairs below are "asked" and "how many said so", for rates. */
+  interviews: number;
+  /** Interviews after a false back-row claim, and how many owned up to lying. */
+  liedInterviews: number;
+  ownedUp: number;
+  /** Knocked out and asked "did you see it coming?", and the yeses. */
+  sawItAsked: number;
+  sawItComing: number;
+  /** Picks for the biggest winner (in games where someone won money), and the right ones. */
+  winnerPicks: number;
+  winnerRight: number;
+  /** Finalists who said what they planned at the start, and how many planned to steal. */
+  plansGiven: number;
+  plannedSteal: number;
+  /** Finalists who planned to split or steal, and how many did what they planned. */
+  planChecks: number;
+  stuckToPlan: number;
+  /** "Knowing what they chose, would you choose the same again?", and the yeses. */
+  againAsked: number;
+  sameAgain: number;
+  /** Trust scores (1 to 5) given to the other finalist: how many, and their total. */
+  trustScores: number;
+  trustTotal: number;
   /** For AI models: who made it, where, whether the weights are open, and when it came out. */
   facts?: ModelFacts;
   /** For a group of contestants (by creator, country...): the ones in it. */

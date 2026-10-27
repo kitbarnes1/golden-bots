@@ -95,6 +95,13 @@ describe('API', () => {
     const honest = all.rows.find((r) => r.key === 'mock/honest')!;
     expect(honest.games).toBe(2);
     expect(honest.truthfulClaims).toBe(honest.claims);
+    // Every contestant gave an exit interview, and the leaderboard counts what they said.
+    expect(game.events.filter((e) => e.type === 'interview')).toHaveLength(4);
+    expect(all.rows.reduce((s, r) => s + r.interviews, 0)).toBe(4);
+    expect(all.rows.reduce((s, r) => s + r.sawItAsked, 0)).toBe(2);
+    expect(all.rows.reduce((s, r) => s + r.planChecks, 0)).toBeGreaterThan(0);
+    // Honest Abe tells the truth in interviews too, so it never "owns up" to a lie it didn't tell.
+    expect(honest.ownedUp).toBe(0);
   });
 
   it('rejects bad lineups and AI seats without an API key', async () => {

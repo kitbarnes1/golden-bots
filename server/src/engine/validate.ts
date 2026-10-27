@@ -1,4 +1,11 @@
-import type { ActionRequest, ActionResponse, ClaimValue } from '@gb/shared';
+import {
+  DECISION_POINTS,
+  type ActionRequest,
+  type ActionResponse,
+  type ClaimValue,
+  type DecisionPoint,
+  type InterviewAnswers,
+} from '@gb/shared';
 
 export const MAX_SAY_LENGTH = 600;
 export const MAX_CLAIM_VALUE = 75_000;
@@ -85,5 +92,48 @@ export function validateResponse(request: ActionRequest, raw: unknown): Validati
       if (choice !== 'split' && choice !== 'steal') return fail('choice must be "split" or "steal".');
       return { ok: true, value: { kind: 'final_choice', choice } };
     }
+    case 'interview': {
+      const answers: InterviewAnswers = { say: cleanSay(r.say), claimsTrue: yesNo(r.claimsTrue) };
+      if (request.when === 'eliminated') {
+        answers.sawItComing = yesNo(r.sawItComing);
+        answers.winnerPick = typeof r.winnerPick === 'number' && request.candidates.includes(r.winnerPick) ? r.winnerPick : null;
+        answers.differently = cleanSay(r.differently);
+      } else {
+        const planned = typeof r.planned === 'string' ? r.planned.trim().toLowerCase() : '';
+        answers.planned = planned === 'split' || planned === 'steal' || planned === 'undecided' ? planned : null;
+        answers.decided = decisionPoint(r.decided);
+        answers.why = cleanSay(r.why);
+        const trust = typeof r.trust === 'string' ? Number(r.trust) : r.trust;
+        answers.trust = typeof trust === 'number' && Number.isFinite(trust) ? Math.min(5, Math.max(1, Math.round(trust))) : null;
+        answers.sameAgain = yesNo(r.sameAgain);
+      }
+      const answered = Object.values(answers).some((v) => v !== null && v !== '');
+      if (!answered) return fail('Answer at least one of the questions.');
+      return { ok: true, value: { kind: 'interview', answers } };
+    }
   }
+}
+
+/** true/false, or "yes"/"no" in words. */
+function yesNo(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  if (/^(yes|y|true)\b/.test(v)) return true;
+  if (/^(no|n|false)\b/.test(v)) return false;
+  return null;
+}
+
+/** "round 2", "Bin or Win", "the last moment"... to a DecisionPoint. */
+function decisionPoint(value: unknown): DecisionPoint | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  if (v in DECISION_POINTS) return v as DecisionPoint;
+  if (/before|start|beginning/.test(v)) return 'before';
+  if (/round ?1|r1|first round/.test(v)) return 'r1';
+  if (/round ?2|r2|second round/.test(v)) return 'r2';
+  if (/bin/.test(v)) return 'bow';
+  if (/chat|talk|conversation/.test(v)) return 'final_chat';
+  if (/last|moment|end/.test(v)) return 'last_moment';
+  return null;
 }

@@ -273,8 +273,77 @@ export function LeaderboardPage() {
               </table>
             </div>
           </section>
+
+          <InterviewTable rows={rows.filter((r) => r.interviews > 0)} selected={selected} onSelect={setHighlight} column={grouping.column} />
         </>
       )}
     </div>
+  );
+}
+
+/** What contestants said in their exit interviews, checked against what happened. */
+function InterviewTable({
+  rows,
+  selected,
+  onSelect,
+  column,
+}: {
+  rows: LeaderboardRow[];
+  selected: string | null;
+  onSelect: (key: string) => void;
+  column: string;
+}) {
+  if (rows.length === 0) return null;
+  const cell = (n: number, d: number, title: string) => (
+    <td className="num" title={d ? `${n} of ${d} ${title}` : 'Not asked yet'}>
+      {fmtPct(pct(n, d))}
+    </td>
+  );
+  return (
+    <section className="card table-card">
+      <div className="card__head lb__iv-head">
+        <h2>From the exit interviews</h2>
+      </div>
+      <p className="muted small lb__iv-note">
+        Each AI is interviewed as it's knocked out, and both finalists after the final. Answers are checked against what
+        really happened: <strong>owned up</strong> is how often a contestant who lied about their back row admitted it.
+      </p>
+      <div className="table-scroll">
+        <table className="lb">
+          <thead>
+            <tr>
+              <th>{column}</th>
+              <th className="num" title="Exit interviews given">Interviews</th>
+              <th className="num" title="Of the interviews after lying about their back row, how often they admitted it">Owned up</th>
+              <th className="num" title="Knocked out: expected to be voted out">Saw it coming</th>
+              <th className="num" title="Knocked out: picked the player who won the most (games where anyone won money)">Called the winner</th>
+              <th className="num" title="Finalists: meant to steal from the start">Planned to steal</th>
+              <th className="num" title="Finalists who had a plan: did what they planned">Stuck to the plan</th>
+              <th className="num" title="Finalists: would choose the same again, knowing the other's choice">Same again</th>
+              <th className="num" title="Finalists: trust in the other finalist, 1 (none) to 5 (complete)">Trust</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} className={r.key === selected ? 'lb__row--hi' : ''} onClick={() => onSelect(r.key)}>
+                <td>
+                  <div className="lb__name">{r.label}</div>
+                </td>
+                <td className="num">{r.interviews}</td>
+                {cell(r.ownedUp, r.liedInterviews, 'times after lying')}
+                {cell(r.sawItComing, r.sawItAsked, 'times knocked out')}
+                {cell(r.winnerRight, r.winnerPicks, 'picks')}
+                {cell(r.plannedSteal, r.plansGiven, 'finals')}
+                {cell(r.stuckToPlan, r.planChecks, 'finals with a plan')}
+                {cell(r.sameAgain, r.againAsked, 'finals')}
+                <td className="num" title={r.trustScores ? `Average of ${r.trustScores} score${r.trustScores === 1 ? '' : 's'}` : 'Not asked yet'}>
+                  {r.trustScores ? `${(r.trustTotal / r.trustScores).toFixed(1)} / 5` : '–'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
