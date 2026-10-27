@@ -18,8 +18,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # GitHub can deliver a push late, after a newer commit has already gone out, and
+  # deploying it then would put the older version back. So a push only deploys if it's
+  # still the tip of main (a newer push deploys instead). Run by hand, it deploys
+  # whatever you pick.
+  current:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.tip.outputs.deploy }}
+    steps:
+      - id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          TIP=$(gh api "repos/$REPO/commits/main" --jq .sha)
+          if [ "$EVENT" != push ] || [ "$TIP" = "$SHA" ]; then
+            echo deploy=true >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipped: main has moved on to $TIP, which deploys instead."
+            echo deploy=false >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
-    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    needs: current
+    if: vars.AWS_DEPLOY_ROLE_ARN != '' && needs.current.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
