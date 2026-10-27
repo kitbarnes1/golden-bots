@@ -8,10 +8,12 @@ import { LeaderboardPage } from './pages/LeaderboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AuthProvider, useAuth } from './lib/auth';
+import { useFreshBuild } from './lib/useFreshBuild';
 import './styles.css';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
+  useFreshBuild();
   return (
     <>
       <header className="topbar">
