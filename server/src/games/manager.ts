@@ -165,6 +165,7 @@ export class GameManager {
       agents,
       options,
       signal: abort.signal,
+      voteRevealMs: this.cfg.voteRevealMs,
       emit: (event) => this.onEvent(game, event),
       onStatus: (status) => {
         game.lastStatus = status;

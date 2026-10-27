@@ -91,6 +91,7 @@ async function start(overrides: Partial<Config> = {}) {
   cfg = {
     ...config,
     mockDelayMs: 0,
+    voteRevealMs: 0,
     adminPassword: '',
     openRouterApiKey: '',
     openRouterBaseUrl: base,

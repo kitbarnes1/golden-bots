@@ -8,6 +8,7 @@ import { FinalStage } from '../components/FinalStage';
 import { ChatBox, FloorBanner } from '../components/OpenFloor';
 import { Podium } from '../components/Podium';
 import { RoundsReview } from '../components/RoundsReview';
+import { VoteTally } from '../components/VoteTally';
 import { api, ApiError, prefs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { buildView, STAGE_LABELS } from '../lib/gameState';
@@ -17,6 +18,8 @@ import { useGame } from '../lib/useGame';
 const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast', 'chat_pass', 'paused', 'resumed']);
 
 function replayDelay(e: GameEvent, speed: number): number {
+  // The same suspense as live: a pause before each vote is read out.
+  if (e.type === 'vote_revealed') return (e.index === e.total - 1 ? 3000 : 2000) / speed;
   const text =
     e.type === 'speech' || e.type === 'claim' ? e.say : e.type === 'host' ? e.text : e.type === 'thoughts' ? (e.thoughts ?? '') : '';
   return Math.min(6000, 700 + text.length * 22) / speed;
@@ -256,6 +259,9 @@ export function GamePage() {
               showHidden={viewer.omniscient && (reveal || !live)}
               {...(mySeat !== undefined ? { viewerSeat: mySeat } : {})}
             />
+          )}
+          {tab === 'stage' && (view.stage === 'r1' || view.stage === 'r2') && view.voteReading && (
+            <VoteTally reading={view.voteReading} seats={view.seats} />
           )}
           {tab === 'stage' && (view.stage === 'intro' || view.stage === 'r1' || view.stage === 'r2') && (
             <div className="podiums">
