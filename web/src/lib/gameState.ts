@@ -70,6 +70,8 @@ export interface GameView {
   seats: SeatView[];
   stage: ViewStage;
   votes?: { seat: number; target: number }[];
+  /** The votes being read out this round, in reading order; `done` once the last is in. */
+  voteReading?: VoteReading;
   board?: BoardView;
   final?: FinalView;
   awaiting?: { seat: number; requestId: string; request: ActionRequest };
@@ -77,6 +79,13 @@ export interface GameView {
   error?: string;
   /** While the game is paused: the human everyone is waiting for, and why (away, or reading at their own pace). */
   pause?: { seat: number; reason: PauseReason; seq: number; since: number };
+}
+
+export interface VoteReading {
+  stage: 'r1' | 'r2';
+  read: { seat: number; target: number }[];
+  total: number;
+  done: boolean;
 }
 
 export function emptyView(): GameView {
@@ -110,6 +119,7 @@ function apply(v: GameView, e: GameEvent): void {
     case 'round_started':
       v.stage = e.stage;
       v.votes = undefined;
+      v.voteReading = undefined;
       for (const s of v.seats) {
         s.claim = null;
         s.back = null;
@@ -136,9 +146,16 @@ function apply(v: GameView, e: GameEvent): void {
     case 'vote_cast':
       v.seats[e.seat]!.voted = true;
       break;
+    case 'vote_revealed':
+      v.voteReading ??= { stage: e.stage, read: [], total: e.total, done: false };
+      v.voteReading.read.push({ seat: e.seat, target: e.target });
+      v.seats[e.target]!.votesReceived++;
+      break;
     case 'votes_revealed':
       v.votes = e.votes;
-      for (const { target } of e.votes) v.seats[target]!.votesReceived++;
+      // Count afresh: the votes may already have been read out one at a time.
+      for (const s of v.seats) s.votesReceived = e.votes.filter((x) => x.target === s.info.seat).length;
+      v.voteReading = { stage: e.stage, read: v.voteReading?.read ?? e.votes, total: e.votes.length, done: true };
       break;
     case 'eliminated': {
       const s = v.seats[e.seat]!;

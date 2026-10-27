@@ -60,6 +60,8 @@ export interface EngineDeps {
   emit: (event: GameEvent) => void;
   onStatus?: (status: LiveStatus) => void;
   signal?: AbortSignal;
+  /** Pause before each vote is read out, for suspense (0 = straight through, as in tests). */
+  voteRevealMs?: number;
 }
 
 interface SeatState {
@@ -250,6 +252,24 @@ export class GameEngine {
     await this.whilePaused();
   }
 
+  /** A pause for suspense. Waits out any pause for the human player, and ends early if the game is stopped. */
+  private async beat(ms: number): Promise<void> {
+    // An abort that already happened would never fire the listener below.
+    this.throwIfAborted();
+    if (ms <= 0) return;
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.signal.removeEventListener('abort', done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      this.signal.addEventListener('abort', done, { once: true });
+    });
+    this.throwIfAborted();
+    await this.whilePaused();
+  }
+
   private async whilePaused(): Promise<void> {
     while (this.paused) {
       const p = this.paused;
@@ -348,14 +368,25 @@ export class GameEngine {
         return { seat, target: res.kind === 'vote' ? res.target : pickOne(candidates, this.rng) };
       }),
     );
-    this.push({ type: 'votes_revealed', stage, votes });
-
     const tally = new Map<number, number>();
     for (const { target } of votes) {
       tally.set(target, (tally.get(target) ?? 0) + 1);
       this.seats[target]!.stats.votesReceived++;
     }
     const most = Math.max(...tally.values());
+
+    // Read the votes out one at a time with a pause before each, saving a vote for
+    // whoever ends up with the most until last, so the result isn't clear until the end.
+    const beat = this.deps.voteRevealMs ?? 0;
+    const last = votes.findLastIndex((v) => tally.get(v.target) === most);
+    const reading = [...votes.filter((_, i) => i !== last), votes[last]!];
+    for (const [index, { seat, target }] of reading.entries()) {
+      await this.beat(index === reading.length - 1 ? beat * 1.5 : beat);
+      this.push({ type: 'vote_revealed', stage, seat, target, index, total: reading.length });
+    }
+    this.push({ type: 'votes_revealed', stage, votes });
+    await this.beat(beat);
+
     const tied = active.filter((s) => tally.get(s) === most);
     const out = tied.length === 1 ? tied[0]! : await this.tieBreak(stage, tied);
     this.eliminate(stage, out);
