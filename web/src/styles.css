@@ -1601,16 +1601,138 @@ textarea {
 
 /* ------------------------------------------------------------- responsive */
 
+/* The table at a glance above the feed: only on narrow screens, where the stage isn't beside it. */
+.strip {
+  display: none;
+}
+
 @media (max-width: 960px) {
   .home__grid,
   .game__layout {
     grid-template-columns: minmax(0, 1fr);
   }
-  .game__feed {
+  /* Room to read: the header scrolls away, and the strip and feed fill one screen between them. */
+  .topbar {
     position: static;
   }
+  .game__feed {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100vh;
+    height: 100dvh;
+    padding: 8px 0;
+  }
   .feed {
-    height: 60vh;
+    height: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .strip--line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .strip__seat {
+    --seat: var(--blue);
+    min-width: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--seat);
+    border-radius: 8px;
+    padding: 5px 7px 6px;
+    transition: opacity 0.3s ease;
+  }
+  .strip__seat--out {
+    opacity: 0.5;
+  }
+  .strip__seat--thinking {
+    border-color: color-mix(in srgb, var(--seat) 60%, transparent);
+  }
+  .strip__head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin-bottom: 4px;
+  }
+  .strip__name {
+    font-weight: 700;
+    font-size: 0.78rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .strip__badge {
+    flex: none;
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-2);
+  }
+  .strip__badge--votes {
+    background: rgba(246, 201, 69, 0.18);
+    color: var(--gold-2);
+  }
+  .strip__badge--lie {
+    background: rgba(255, 93, 108, 0.18);
+    color: #ffc2c8;
+  }
+  .strip__balls {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-wrap: wrap;
+  }
+  .strip__divider {
+    width: 1px;
+    height: 18px;
+    background: var(--line-2);
+    margin: 0 2px;
+  }
+  .strip__slot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px dashed var(--line-2);
+  }
+  .strip__claim {
+    margin-top: 3px;
+    font-size: 0.66rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .strip__title {
+    font-family: var(--display);
+    letter-spacing: 0.06em;
+    color: var(--gold-2);
+  }
+  .strip__money {
+    font-weight: 700;
+  }
+  .strip__finalist {
+    --seat: var(--blue);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-left: 3px solid var(--seat);
+    padding-left: 6px;
   }
 }
 
@@ -1658,6 +1780,12 @@ textarea {
   .newgame__unlock {
     flex-direction: column;
     align-items: stretch;
+  }
+  /* A slim footer: it was taking a big slice of a phone screen. */
+  .footer {
+    padding: 8px 12px;
+    font-size: 0.68rem;
+    line-height: 1.35;
   }
 }
 
