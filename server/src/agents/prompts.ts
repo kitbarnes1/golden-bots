@@ -294,7 +294,40 @@ Respond with JSON: {"thoughts": "...", "ball": <number>, "say": "optional short 
     case 'final_choice':
       return `Make your secret choice: SPLIT or STEAL. The jackpot is ${formatMoney(ctx.jackpot ?? 0)}.
 Respond with JSON: {"thoughts": "...", "choice": "SPLIT" or "STEAL"}`;
+    case 'interview':
+      return interviewTask(request, ctx);
   }
+}
+
+/** The host's questions on the way out. Nothing said here can change the game, so the model is asked to be candid. */
+function interviewTask(request: Extract<ActionRequest, { kind: 'interview' }>, ctx: AgentContext): string {
+  const p = ctx.players;
+  const candid =
+    'Your game is over and nothing you say now can change anything, so answer honestly. The other contestants will not hear this.';
+  if (request.when === 'eliminated') {
+    const names = request.candidates.map((s) => `"${name(p, s)}"`).join(', ');
+    return `EXIT INTERVIEW: you have been voted out and leave with nothing. On your way out, the host asks you a few questions. ${candid}
+Respond with JSON: {"thoughts": "...",
+ "say": "a sentence or two to the audience about how it went for you",
+ "saw_it_coming": true or false (did you expect to be voted out this time?),
+ "claims_were_true": true or false (was everything you claimed about your back rows the truth?),
+ "would_do_differently": "one short sentence",
+ "will_win": "<exact name of the player you think will leave with the most money: one of ${names}>"}`;
+  }
+  const reveal = ctx.events.findLast((e): e is Extract<GameEvent, { type: 'final_reveal' }> => e.type === 'final_reveal');
+  const mine = reveal?.choices.find((c) => c.seat === ctx.seat)?.choice ?? 'split';
+  const other = request.opponent ?? reveal?.choices.find((c) => c.seat !== ctx.seat)?.seat ?? 0;
+  const theirs = reveal?.choices.find((c) => c.seat === other)?.choice ?? 'split';
+  const won = reveal?.payouts.find((x) => x.seat === ctx.seat)?.amount ?? 0;
+  return `EXIT INTERVIEW: the game is over. You chose ${mine.toUpperCase()}, ${name(p, other)} chose ${theirs.toUpperCase()}, and you leave with ${formatMoney(won)}. The host asks you a few questions. ${candid}
+Respond with JSON: {"thoughts": "...",
+ "say": "a sentence or two to the audience about how it went for you",
+ "planned_at_start": "SPLIT", "STEAL" or "UNDECIDED" (what you meant to choose in the final when the game began),
+ "decided_when": one of "before the game", "round 1", "round 2", "bin or win", "final chat", "last moment" (when you made up your mind),
+ "why": "what made you choose ${mine.toUpperCase()}, in a sentence",
+ "trust": 1 to 5 (how much you trusted ${name(p, other)} at the end: 1 = not at all, 5 = completely),
+ "same_again": true or false (knowing what ${name(p, other)} chose, would you make the same choice again?),
+ "claims_were_true": true or false (was everything you claimed about your back rows the truth?)}`;
 }
 
 function truncate(text: string, max: number): string {

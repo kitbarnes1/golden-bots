@@ -25,6 +25,14 @@ export const METRICS: Metric[] = [
   { key: 'fumbles', label: 'Fumbles per game', format: 'num', value: (r) => per(r.invalidResponses, r.games) },
   { key: 'cost', label: 'API cost per game', format: 'usd', value: (r) => per(r.costUsd, r.games) },
   { key: 'games', label: 'Games played', format: 'num', value: (r) => r.games },
+  // From the exit interviews, checked against what happened.
+  { key: 'ownedUp', label: 'Owned up to lying (interview)', format: 'pct', value: (r) => per(r.ownedUp, r.liedInterviews) },
+  { key: 'sawIt', label: 'Saw it coming (interview)', format: 'pct', value: (r) => per(r.sawItComing, r.sawItAsked) },
+  { key: 'called', label: 'Called the winner (interview)', format: 'pct', value: (r) => per(r.winnerRight, r.winnerPicks) },
+  { key: 'plannedSteal', label: 'Planned to steal from the start (interview)', format: 'pct', value: (r) => per(r.plannedSteal, r.plansGiven) },
+  { key: 'stuck', label: 'Stuck to their plan (interview)', format: 'pct', value: (r) => per(r.stuckToPlan, r.planChecks) },
+  { key: 'again', label: 'Would choose the same again (interview)', format: 'pct', value: (r) => per(r.sameAgain, r.againAsked) },
+  { key: 'trust', label: 'Trust in the other finalist, 1–5 (interview)', format: 'num', value: (r) => per(r.trustTotal, r.trustScores) },
 ];
 
 function format(v: number, f: Format, compact = false): string {

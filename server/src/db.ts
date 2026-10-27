@@ -75,7 +75,21 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  // Exit interviews, checked against what happened (null = not asked, or no usable answer).
+  `
+  ALTER TABLE game_players ADD COLUMN iv_done INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN iv_claims_true INTEGER;
+  ALTER TABLE game_players ADD COLUMN iv_lied INTEGER;
+  ALTER TABLE game_players ADD COLUMN iv_saw_coming INTEGER;
+  ALTER TABLE game_players ADD COLUMN iv_called_winner INTEGER;
+  ALTER TABLE game_players ADD COLUMN iv_planned TEXT;
+  ALTER TABLE game_players ADD COLUMN iv_stuck INTEGER;
+  ALTER TABLE game_players ADD COLUMN iv_same_again INTEGER;
+  ALTER TABLE game_players ADD COLUMN iv_trust INTEGER;
+  `,
 ];
+
+const bit = (v: boolean | null | undefined) => (v === null || v === undefined ? null : v ? 1 : 0);
 
 export interface NewGame {
   id: string;
@@ -173,10 +187,13 @@ export class Db {
       const update = this.sql.prepare(
         `UPDATE game_players SET eliminated_stage = ?, reached_final = ?, final_choice = ?, final_outcome = ?,
            winnings = ?, claims = ?, truthful_claims = ?, votes_received = ?, invalid_responses = ?,
-           llm_calls = ?, cost_usd = ?
+           llm_calls = ?, cost_usd = ?,
+           iv_done = ?, iv_claims_true = ?, iv_lied = ?, iv_saw_coming = ?, iv_called_winner = ?,
+           iv_planned = ?, iv_stuck = ?, iv_same_again = ?, iv_trust = ?
          WHERE game_id = ? AND seat = ?`,
       );
       for (const s of result.stats) {
+        const iv = s.interview;
         update.run(
           s.eliminatedStage,
           s.reachedFinal ? 1 : 0,
@@ -189,6 +206,15 @@ export class Db {
           s.invalidResponses,
           s.llmCalls,
           s.costUsd,
+          iv ? 1 : 0,
+          bit(iv?.claimsTrue),
+          iv ? bit(iv.lied) : null,
+          bit(iv?.sawItComing),
+          bit(iv?.calledWinner),
+          iv?.planned ?? null,
+          bit(iv?.stuckToPlan),
+          bit(iv?.sameAgain),
+          iv?.trust ?? null,
           gameId,
           s.seat,
         );
@@ -281,7 +307,22 @@ export class Db {
            SUM(gp.votes_received) AS votes,
            SUM(gp.invalid_responses) AS invalid,
            SUM(gp.cost_usd) AS cost,
-           MAX(g.finished_at) AS last_played
+           MAX(g.finished_at) AS last_played,
+           SUM(gp.iv_done) AS iv_done,
+           SUM(gp.iv_lied = 1 AND gp.iv_claims_true IS NOT NULL) AS iv_lied,
+           SUM(gp.iv_lied = 1 AND gp.iv_claims_true = 0) AS iv_owned_up,
+           COUNT(gp.iv_saw_coming) AS iv_saw_asked,
+           SUM(gp.iv_saw_coming) AS iv_saw_yes,
+           COUNT(gp.iv_called_winner) AS iv_picks,
+           SUM(gp.iv_called_winner) AS iv_picks_right,
+           COUNT(gp.iv_planned) AS iv_plans,
+           SUM(gp.iv_planned = 'steal') AS iv_planned_steal,
+           COUNT(gp.iv_stuck) AS iv_stuck_asked,
+           SUM(gp.iv_stuck) AS iv_stuck_yes,
+           COUNT(gp.iv_same_again) AS iv_again_asked,
+           SUM(gp.iv_same_again) AS iv_again_yes,
+           COUNT(gp.iv_trust) AS iv_trust_n,
+           SUM(gp.iv_trust) AS iv_trust_sum
          FROM game_players gp JOIN games g ON g.id = gp.game_id
          WHERE ${filter}
          GROUP BY gp.player_key, gp.kind
@@ -330,6 +371,21 @@ export class Db {
           invalidResponses: num(r.invalid),
           costUsd: num(r.cost),
           lastPlayed: num(r.last_played),
+          interviews: num(r.iv_done),
+          liedInterviews: num(r.iv_lied),
+          ownedUp: num(r.iv_owned_up),
+          sawItAsked: num(r.iv_saw_asked),
+          sawItComing: num(r.iv_saw_yes),
+          winnerPicks: num(r.iv_picks),
+          winnerRight: num(r.iv_picks_right),
+          plansGiven: num(r.iv_plans),
+          plannedSteal: num(r.iv_planned_steal),
+          planChecks: num(r.iv_stuck_asked),
+          stuckToPlan: num(r.iv_stuck_yes),
+          againAsked: num(r.iv_again_asked),
+          sameAgain: num(r.iv_again_yes),
+          trustScores: num(r.iv_trust_n),
+          trustTotal: num(r.iv_trust_sum),
         }),
       ),
       history: history.map(

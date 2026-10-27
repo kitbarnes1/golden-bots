@@ -10,6 +10,8 @@ import {
 } from '@gb/shared';
 import { SEAT_COLORS } from '../lib/gameState';
 import { Ball } from './Ball';
+import { InterviewAnswers } from './Interview';
+import { PlayerCard } from './PlayerCard';
 
 interface Props {
   events: GameEvent[];
@@ -42,7 +44,9 @@ const ACTION_LABELS: Record<string, string> = {
 export function Feed({ events, players, showThoughts, reveal, viewerSeat, activity, footer }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
-  /** Follow one contestant: everyone else's lines fade back. */
+  /** The contestant whose card is open (click a name). */
+  const [card, setCard] = useState<number | null>(null);
+  /** Highlight one contestant's lines: everyone else's fade back. */
   const [focus, setFocus] = useState<number | null>(null);
 
   // Keep scrolled to the newest line unless the reader has scrolled up.
@@ -70,9 +74,9 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
       type="button"
       className="feed__who"
       style={color(seat)}
-      aria-pressed={focus === seat}
-      title={focus === seat ? 'Show everyone again' : `Follow ${name(seat)}`}
-      onClick={() => setFocus((f) => (f === seat ? null : seat))}
+      aria-expanded={card === seat}
+      title={`About ${name(seat)}: their balls, claims and votes`}
+      onClick={() => setCard((c) => (c === seat ? null : seat))}
     >
       {name(seat)}
       {seat === viewerSeat && <span className="feed__muted"> (you)</span>}
@@ -374,6 +378,16 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
           </div>,
         );
         break;
+      case 'interview':
+        items.push(
+          <div key={key} className={`feed__interview${dim(e.seat)}`} style={color(e.seat)}>
+            <div className="feed__interview-head">
+              <span aria-hidden>🎤</span> Exit interview: {who(e.seat)}
+            </div>
+            <InterviewAnswers event={e} events={events} who={who} />
+          </div>,
+        );
+        break;
       case 'game_error':
         items.push(
           <div key={key} className="feed__error">
@@ -413,15 +427,29 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
       }}
       aria-live="polite"
     >
-      {focus !== null && (
-        <div className="feed__focus" style={color(focus)} aria-live="off">
-          <span>
-            Following <strong>{name(focus)}</strong>
-          </span>
-          <button type="button" className="linklike" onClick={() => setFocus(null)}>
-            Show everyone
-          </button>
-        </div>
+      {card !== null ? (
+        <PlayerCard
+          seat={card}
+          events={events}
+          players={players}
+          showHidden={reveal}
+          {...(viewerSeat !== undefined ? { viewerSeat } : {})}
+          highlighted={focus === card}
+          onHighlight={() => setFocus((f) => (f === card ? null : card))}
+          onClose={() => setCard(null)}
+          who={who}
+        />
+      ) : (
+        focus !== null && (
+          <div className="feed__focus" style={color(focus)} aria-live="off">
+            <span>
+              Highlighting <strong>{name(focus)}</strong>
+            </span>
+            <button type="button" className="linklike" onClick={() => setFocus(null)}>
+              Show everyone
+            </button>
+          </div>
+        )
       )}
       {items}
       {busy.length > 0 && (

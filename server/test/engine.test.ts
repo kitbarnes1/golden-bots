@@ -12,6 +12,8 @@ import {
 import { GameEngine, GameFatalError, overlap } from '../src/engine/engine.js';
 import { HumanAgent } from '../src/agents/human.js';
 import { MockAgent } from '../src/agents/mock.js';
+import { transcript } from '../src/agents/prompts.js';
+import { validateResponse } from '../src/engine/validate.js';
 import { AgentError, type Agent, type AgentContext, type AgentResult } from '../src/agents/types.js';
 
 const players: PlayerInfo[] = ['Ava', 'Ben', 'Cleo', 'Dev'].map((name, seat) => ({ seat, name, kind: 'mock' }));
@@ -635,3 +637,136 @@ describe('HumanAgent', () => {
     expect(await result).toMatchObject({ response: { choice: 'split' }, timedOut: true });
   });
 });
+
+describe('exit interviews', () => {
+  /** A contestant whose interview answers are scripted (and can be slow or fail); everything else is a mock. */
+  class Interviewee implements Agent {
+    readonly interactive: boolean;
+    private readonly base: MockAgent;
+    constructor(
+      seed: number,
+      private readonly answer: (request: Extract<ActionRequest, { kind: 'interview' }>) => Promise<unknown> | unknown,
+      interactive = false,
+    ) {
+      this.base = new MockAgent('mock/honest', seed);
+      this.interactive = interactive;
+    }
+    async act(request: ActionRequest, ctx: AgentContext, meta: { requestId: string; signal: AbortSignal }): Promise<AgentResult> {
+      if (request.kind === 'interview') return { response: await this.answer(request), usage: { promptTokens: 1, completionTokens: 1, costUsd: 0.01, latencyMs: 1 } };
+      return this.base.act(request, ctx, meta);
+    }
+  }
+
+  it('interviews everyone once, on the way out or after the final, and checks the answers', async () => {
+    const { events, result } = await play(21);
+    const interviews = ofType(events, 'interview');
+    expect(interviews.map((i) => i.when).sort()).toEqual(['eliminated', 'eliminated', 'final', 'final']);
+    expect(new Set(interviews.map((i) => i.seat)).size).toBe(4);
+    // Everyone's interview is in before the game ends, and is visible to all.
+    expect(events.findIndex((e) => e.type === 'interview' && e.when === 'final')).toBeLessThan(events.findIndex((e) => e.type === 'game_over'));
+    for (const i of interviews) expect(i.vis).toBe('public');
+    for (const s of result.stats) {
+      expect(s.interview).not.toBeNull();
+      expect(s.interview!.lied).toBe(s.truthfulClaims < s.claims);
+    }
+    // A finalist's plan is checked against what they chose.
+    for (const s of result.stats.filter((x) => x.reachedFinal)) {
+      const said = interviews.find((i) => i.seat === s.seat)!.answers.planned;
+      if (said === 'split' || said === 'steal') expect(s.interview!.stuckToPlan).toBe(said === s.finalChoice);
+    }
+    // A prediction is right if that player won the most (and someone won something).
+    const top = Math.max(...result.stats.map((s) => s.winnings));
+    for (const i of interviews.filter((x) => x.when === 'eliminated')) {
+      const called = result.stats[i.seat]!.interview!.calledWinner;
+      if (top === 0 || i.answers.winnerPick == null) expect(called).toBeNull();
+      else expect(called).toBe(result.stats[i.answers.winnerPick]!.winnings === top);
+    }
+  });
+
+  it("doesn't hold the game up, but waits for every answer before it ends", async () => {
+    const slow = (request: Extract<ActionRequest, { kind: 'interview' }>) =>
+      new Promise((r) => setTimeout(() => r({ say: `${request.when} answer`, claimsTrue: true, sawItComing: true }), 150));
+    // Ava is voted out first: everyone votes for her (and she votes for Ben).
+    const votes = (seat: number): Script => (req) => (req.kind === 'vote' && req.stage === 'r1' ? { target: seat === 0 ? 1 : 0 } : undefined);
+    const events: GameEvent[] = [];
+    const engine = new GameEngine({
+      players,
+      agents: players.map((p) => new ScriptedAgentWrapping(new Interviewee(30 + p.seat, slow), votes(p.seat))),
+      options: options(30, { chatSeconds: 0, reflectSeconds: 0, finalChatSeconds: 0 }),
+      emit: (e) => events.push(e),
+    });
+    await engine.run();
+    const ava = events.findIndex((e) => e.type === 'interview' && e.seat === 0);
+    const r2 = events.findIndex((e) => e.type === 'round_started' && e.stage === 'r2');
+    expect(r2).toBeGreaterThan(-1);
+    expect(ava).toBeGreaterThan(r2); // round 2 started while Ava was still answering
+    expect(ava).toBeLessThan(events.findIndex((e) => e.type === 'game_over'));
+  });
+
+  it("doesn't ask humans, and skips a failed interview without counting a fumble", async () => {
+    const events: GameEvent[] = [];
+    const agents = players.map(
+      (p) =>
+        new Interviewee(
+          40 + p.seat,
+          () => {
+            if (p.seat === 1) throw new Error('model fell over');
+            return p.seat === 2 ? { nonsense: true } : { say: 'Fine.', claimsTrue: true };
+          },
+          p.seat === 3,
+        ),
+    );
+    const engine = new GameEngine({ players, agents, options: options(40, { chatSeconds: 0, reflectSeconds: 0, finalChatSeconds: 0, readAtMyPace: false }), emit: (e) => events.push(e) });
+    const result = await engine.run();
+    const asked = ofType(events, 'interview').map((i) => i.seat);
+    expect(asked).not.toContain(1); // threw
+    expect(asked).not.toContain(2); // answered nothing usable
+    expect(asked).not.toContain(3); // human
+    expect(asked).toEqual([0]);
+    expect(ofType(events, 'agent_error')).toHaveLength(0);
+    expect(result.stats.map((s) => s.invalidResponses)).toEqual([0, 0, 0, 0]);
+    expect(result.stats[3]!.interview).toBeNull();
+    // A usable but failed answer still costs: seat 2's call is counted.
+    expect(result.stats[2]!.costUsd).toBeGreaterThan(0);
+  });
+
+  it('keeps the answers out of the other contestants’ view of the game', async () => {
+    const { events } = await play(22);
+    const said = ofType(events, 'interview').map((i) => i.answers.say).filter(Boolean);
+    expect(said.length).toBeGreaterThan(0);
+    for (const seat of [0, 1, 2, 3]) {
+      const seen = transcript(events.filter((e) => canSee(e, { seat, omniscient: false })), seat, players);
+      for (const s of said) expect(seen).not.toContain(s);
+    }
+  });
+
+  it('reads loose answers sensibly', () => {
+    const out = validateResponse(
+      { kind: 'interview', when: 'final', candidates: [], opponent: 1 },
+      { say: '  Well then  ', claimsTrue: 'No, I bluffed', planned: 'STEAL', decided: 'the second round', why: 'Money.', trust: '7', sameAgain: 'yes' },
+    );
+    expect(out).toEqual({
+      ok: true,
+      value: { kind: 'interview', answers: { say: 'Well then', claimsTrue: false, planned: 'steal', decided: 'r2', why: 'Money.', trust: 5, sameAgain: true } },
+    });
+    const gone = validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2, 3] }, { sawItComing: true, winnerPick: 1 });
+    expect(gone).toMatchObject({ ok: true, value: { answers: { sawItComing: true, winnerPick: null, claimsTrue: null } } });
+    expect(validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2] }, { hello: 1 }).ok).toBe(false);
+  });
+});
+
+/** Scripted overrides on top of any agent (the interview tests' contestants). */
+class ScriptedAgentWrapping implements Agent {
+  constructor(
+    private readonly inner: Agent,
+    private readonly script: Script,
+  ) {}
+  get interactive() {
+    return this.inner.interactive;
+  }
+  async act(request: ActionRequest, ctx: AgentContext, meta: { requestId: string; signal: AbortSignal }): Promise<AgentResult> {
+    const scripted = this.script(request, ctx);
+    if (scripted !== undefined) return { response: scripted };
+    return this.inner.act(request, ctx, meta);
+  }
+}

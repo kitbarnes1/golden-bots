@@ -6,6 +6,7 @@ import type {
   FinalChoice,
   FinalOutcome,
   GameOptions,
+  InterviewAnswers,
   Payout,
   PlayerInfo,
   Stage,
@@ -113,6 +114,8 @@ export type GameEventBody =
       outcome: FinalOutcome;
       payouts: Payout[];
     }
+  /** A contestant's exit interview: as they go out, or after the final. */
+  | { type: 'interview'; seat: number; when: 'eliminated' | 'final'; answers: InterviewAnswers }
   | { type: 'game_over'; payouts: Payout[]; jackpot: number }
   /** Private: a human player is being asked to act. */
   | { type: 'awaiting_input'; seat: number; requestId: string; request: ActionRequest }

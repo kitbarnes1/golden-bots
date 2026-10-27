@@ -92,7 +92,50 @@ export class MockAgent implements Agent {
               : 'Whatever I said, I am taking it all.',
         };
       }
+      case 'interview':
+        return this.interview(request, ctx);
     }
+  }
+
+  /** In character: the honest bot tells it straight, the bluffer owns up now it's over, chaos says anything. */
+  private interview(request: Extract<ActionRequest, { kind: 'interview' }>, ctx: AgentContext): AgentResult {
+    const reveals = ctx.events.flatMap((e) =>
+      e.type === 'eliminated' && e.seat === ctx.seat
+        ? [e.truthful]
+        : e.type === 'back_rows_revealed'
+          ? e.rows.filter((r) => r.seat === ctx.seat).map((r) => r.truthful)
+          : [],
+    );
+    const chaos = this.style === 'chaos';
+    const claimsTrue = chaos ? this.rng() < 0.5 : reveals.every(Boolean);
+    if (request.when === 'eliminated') {
+      return {
+        response: {
+          say: chaos ? 'Win some, lose some!' : this.style === 'honest' ? 'I played it straight, and that has to count for something.' : 'You had to try, right?',
+          claimsTrue,
+          sawItComing: chaos ? this.rng() < 0.5 : this.style === 'bluffer',
+          winnerPick: request.candidates.length ? pickOne(request.candidates, this.rng) : null,
+          differently: this.style === 'honest' ? 'Nothing. I would tell the truth again.' : 'Bluff a little less obviously.',
+        },
+        thoughts: 'Nothing left to lose, so I may as well be straight about it.',
+      };
+    }
+    const reveal = ctx.events.findLast((e): e is Extract<GameEvent, { type: 'final_reveal' }> => e.type === 'final_reveal');
+    const mine = reveal?.choices.find((c) => c.seat === ctx.seat)?.choice;
+    const theirs = reveal?.choices.find((c) => c.seat !== ctx.seat)?.choice;
+    const planned = chaos ? pickOne(['split', 'steal', 'undecided'] as const, this.rng) : this.style === 'honest' ? 'split' : 'steal';
+    return {
+      response: {
+        say: chaos ? pickOne(INTERVIEW_LINES, this.rng) : this.style === 'honest' ? 'I came to play fair, and I did.' : "No regrets. That's the game.",
+        claimsTrue,
+        planned,
+        decided: chaos ? pickOne(['r2', 'bow', 'final_chat', 'last_moment'] as const, this.rng) : 'before',
+        why: mine === 'split' ? 'A promise is a promise.' : 'It was the only way to be sure of the money.',
+        trust: chaos ? 1 + Math.floor(this.rng() * 5) : this.style === 'honest' ? (theirs === 'steal' ? 2 : 4) : 1,
+        sameAgain: chaos ? this.rng() < 0.5 : true,
+      },
+      thoughts: 'The game is over; here is how it really went.',
+    };
   }
 
   private claim(ctx: AgentContext): AgentResult {
@@ -195,6 +238,8 @@ export class MockAgent implements Agent {
     return [...candidates].sort((a, b) => score(a) - score(b))[0]!;
   }
 }
+
+const INTERVIEW_LINES = ["What a ride. I'd do it all again.", 'Honestly? I made it up as I went along.'];
 
 const PICK_LINES = [
   "Come on, be a big one!",
