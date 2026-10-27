@@ -30,7 +30,7 @@ let manager: GameManager;
 const ROOMY: LimitOptions = { perMinute: 1_000_000, streamsPerVisitor: 1000, streamsTotal: 1000 };
 
 async function setup(overrides: Partial<Config> = {}, limits: LimitOptions = ROOMY) {
-  const cfg: Config = { ...config, mockDelayMs: 0, adminPassword: '', openRouterApiKey: '', webDist: '/nonexistent', ...overrides };
+  const cfg: Config = { ...config, mockDelayMs: 0, voteRevealMs: 0, adminPassword: '', openRouterApiKey: '', webDist: '/nonexistent', ...overrides };
   db = new Db(':memory:');
   const openRouterKey = new OpenRouterKey(cfg, db, new SecretBox(path.join(os.tmpdir(), 'gb-api-test-unused.key')), quiet);
   const catalog = new ModelCatalog(() => null, cfg.featuredModels, quiet);

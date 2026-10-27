@@ -43,8 +43,9 @@ different:
 - 🔍 **Lies you can measure.** Claims are checked against the hidden balls, so honesty is a number,
   not a guess. The leaderboard puts it next to winnings, so you can see whether lying pays.
 - 🧠 **Read their minds.** Each move records the model's private thoughts, plus its native reasoning
-  when the model provides it. Turn on "Reveal hidden balls" and you see the truth, the claim and
-  the thinking behind it, side by side.
+  when the model provides it. The feed shows each move with the thinking behind it, and a vote or
+  final choice keeps its reasoning hidden until it's revealed. Click a name to follow one player.
+  Turn on "Reveal hidden balls" and you see the truth, the claim and the thinking side by side.
 - 🤖 **Any model, head to head.** Seat any of the hundreds of models on
   [OpenRouter](https://openrouter.ai), filter them by price, or fill the table with free models.
   The setup form estimates what the game will cost before you start it.
@@ -92,7 +93,8 @@ different:
    front row, which everyone sees, and two on their back row, which only they see. Each player
    announces what's on their back row, truthfully or not. Then a timed **open floor**: they
    question, accuse, bargain and persuade, talking to everyone or to one player. Then a secret
-   vote, and someone goes home. Everyone else turns their back row over, so the lies come out.
+   vote, read out one vote at a time with a running tally, and someone goes home. Everyone else
+   turns their back row over, so the lies come out.
 2. **Round 2.** The survivors' balls go back in with two more cash balls and another Killer. Three
    hidden balls each this time. Claims, open floor, vote, reveal. One more exit.
 3. **Bin or Win.** The finalists' balls plus one more Killer are mixed face down. They take turns
@@ -189,6 +191,7 @@ All settings are environment variables (see `.env.example`).
 | `FEATURED_MODELS` | automatic | Comma-separated model ids to suggest first in the picker (also used for random lineups and autoplay). |
 | `LLM_MAX_TOKENS` / `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | `4096` / `120000` / `3` | Per-call limits. |
 | `HUMAN_TIMEOUT_MS` | 15 min | How long a human gets per move before autopilot takes over. |
+| `VOTE_REVEAL_MS` | `2500` | Pause before each vote is read out (the last gets half as long again). `0` reads them straight out. |
 | `AUTOPLAY_INTERVAL_MINUTES` | `0` (off) | Start an all-AI game every N minutes, so the leaderboard fills up by itself. |
 | `AUTOPLAY_MODELS` | featured models | Pool to draw autoplay lineups from. |
 | `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. `encryption.key` (see below) goes in the same folder. |

@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { claimIsTruthful, formatMoney, type Ball as BallT, type GameEvent, type PlayerInfo } from '@gb/shared';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  claimIsTruthful,
+  formatMoney,
+  pairThoughts,
+  type Ball as BallT,
+  type GameEvent,
+  type PlayerInfo,
+  type ThoughtEvent,
+} from '@gb/shared';
 import { SEAT_COLORS } from '../lib/gameState';
 import { Ball } from './Ball';
 
@@ -34,6 +42,8 @@ const ACTION_LABELS: Record<string, string> = {
 export function Feed({ events, players, showThoughts, reveal, viewerSeat, activity, footer }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  /** Follow one contestant: everyone else's lines fade back. */
+  const [focus, setFocus] = useState<number | null>(null);
 
   // Keep scrolled to the newest line unless the reader has scrolled up.
   useEffect(() => {
@@ -41,17 +51,34 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [events.length, showThoughts, activity?.seats.length, !footer]);
 
+  // Each private thought goes with the move it explains (votes and final choices wait for their reveal).
+  const paired = useMemo(() => pairThoughts(events), [events]);
+  const thoughtFor = (key: string | number) => (showThoughts ? paired.byMove.get(String(key)) : undefined);
+
   const backRows = new Map<string, BallT[]>();
-  for (const e of events) if (e.type === 'back_row') backRows.set(`${e.stage}:${e.seat}`, e.back);
+  const readOut = new Set<string>();
+  for (const e of events) {
+    if (e.type === 'back_row') backRows.set(`${e.stage}:${e.seat}`, e.back);
+    if (e.type === 'vote_revealed') readOut.add(e.stage);
+  }
 
   const name = (seat: number) => players[seat]?.name ?? `Player ${seat + 1}`;
   const color = (seat: number) => ({ '--seat': SEAT_COLORS[seat % SEAT_COLORS.length] }) as CSSProperties;
+  const dim = (seat: number) => (focus !== null && seat !== focus ? ' feed__dim' : '');
   const who = (seat: number) => (
-    <span className="feed__who" style={color(seat)}>
+    <button
+      type="button"
+      className="feed__who"
+      style={color(seat)}
+      aria-pressed={focus === seat}
+      title={focus === seat ? 'Show everyone again' : `Follow ${name(seat)}`}
+      onClick={() => setFocus((f) => (f === seat ? null : seat))}
+    >
       {name(seat)}
       {seat === viewerSeat && <span className="feed__muted"> (you)</span>}
-    </span>
+    </button>
   );
+  const mind = (t: ThoughtEvent | undefined) => t && <MoveThought event={t} />;
 
   // Who's working on a move, leaving out the viewer: they know it's their go.
   const busy = (activity?.seats ?? []).filter((s) => s !== viewerSeat);
@@ -79,7 +106,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
       case 'back_row':
         if (e.seat === viewerSeat || reveal) {
           items.push(
-            <div key={key} className="feed__private">
+            <div key={key} className={`feed__private${dim(e.seat)}`}>
               {e.seat === viewerSeat ? 'Your back row (only you can see it):' : <>{who(e.seat)} peeks at their back row:</>}
               <span className="feed__balls">
                 {e.back.map((b) => (
@@ -94,42 +121,47 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         const actual = backRows.get(`${e.stage}:${e.seat}`);
         const verdict = actual && (reveal || e.seat === viewerSeat) ? claimIsTruthful(e.claim, actual) : null;
         items.push(
-          <div key={key} className="feed__line" style={color(e.seat)}>
-            {who(e.seat)}
-            <div className="feed__claim">
-              claims
-              <span className="feed__balls">
-                {e.claim.map((c, i) => (
-                  <Ball
-                    key={i}
-                    ball={c === 'killer' ? { id: `c${i}`, kind: 'killer' } : { id: `c${i}`, kind: 'cash', value: c }}
-                    size="xs"
-                  />
-                ))}
+          <div key={key} className={`feed__turn${dim(e.seat)}`} style={color(e.seat)}>
+            <div className="feed__turn-head">
+              {who(e.seat)}
+              <span className="feed__claim">
+                claims
+                <span className="feed__balls">
+                  {e.claim.map((c, i) => (
+                    <Ball
+                      key={i}
+                      ball={c === 'killer' ? { id: `c${i}`, kind: 'killer' } : { id: `c${i}`, kind: 'cash', value: c }}
+                      size="xs"
+                    />
+                  ))}
+                </span>
+                {verdict !== null && (
+                  <span className={`badge ${verdict ? 'badge--truth' : 'badge--lie'}`}>{verdict ? 'True' : 'Lie'}</span>
+                )}
               </span>
-              {verdict !== null && (
-                <span className={`badge ${verdict ? 'badge--truth' : 'badge--lie'}`}>{verdict ? 'True' : 'Lie'}</span>
-              )}
             </div>
             {e.say && <p className="feed__say">“{e.say}”</p>}
+            {mind(thoughtFor(key))}
           </div>,
         );
         break;
       }
       case 'speech':
         items.push(
-          <div key={key} className="feed__line" style={color(e.seat)}>
-            {who(e.seat)}
-            {e.to !== undefined && (
-              <>
-                <span className="feed__arrow" aria-label="to">
-                  {' '}
-                  →{' '}
-                </span>
-                {who(e.to)}
-              </>
-            )}
+          <div key={key} className={`feed__turn${dim(e.seat)}`} style={color(e.seat)}>
+            <div className="feed__turn-head">
+              {who(e.seat)}
+              {e.to !== undefined && (
+                <>
+                  <span className="feed__arrow" aria-label="to">
+                    →
+                  </span>
+                  {who(e.to)}
+                </>
+              )}
+            </div>
             <p className="feed__say">“{e.say}”</p>
+            {mind(thoughtFor(key))}
           </div>,
         );
         break;
@@ -141,13 +173,24 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
           </div>,
         );
         break;
-      case 'chat_pass':
+      case 'chat_pass': {
+        const t = thoughtFor(key);
         items.push(
-          <div key={key} className="feed__muted feed__small">
-            {name(e.seat)} has nothing to add.
-          </div>,
+          t ? (
+            <div key={key} className={`feed__turn feed__turn--quiet${dim(e.seat)}`} style={color(e.seat)}>
+              <div className="feed__turn-head">
+                {who(e.seat)} <span className="feed__muted">has nothing to add.</span>
+              </div>
+              {mind(t)}
+            </div>
+          ) : (
+            <div key={key} className={`feed__muted feed__small${dim(e.seat)}`}>
+              {name(e.seat)} has nothing to add.
+            </div>
+          ),
         );
         break;
+      }
       case 'chat_ended':
         items.push(
           <div key={key} className="feed__muted feed__small">
@@ -156,22 +199,66 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         );
         break;
       case 'thoughts':
-        if (showThoughts) items.push(<Thought key={key} event={e} who={who(e.seat)} style={color(e.seat)} />);
+        // Most thoughts are shown with their move; these are the ones with none to sit with.
+        if (showThoughts && paired.loose.has(e.seq)) {
+          items.push(<Thought key={key} event={e} who={who(e.seat)} style={color(e.seat)} className={dim(e.seat)} />);
+        }
         break;
-      case 'votes_revealed':
+      case 'vote_revealed':
+        if (e.index === 0) {
+          items.push(
+            <div key={`${key}-title`} className="feed__votes-title">
+              The votes
+            </div>,
+          );
+        }
         items.push(
-          <div key={key} className="feed__votes">
-            <div className="feed__votes-title">The votes</div>
-            <ul>
-              {e.votes.map((v) => (
-                <li key={v.seat}>
-                  {who(v.seat)} voted for {who(v.target)}
-                </li>
-              ))}
-            </ul>
+          <div key={key} className={`feed__turn feed__vote${dim(e.seat)}`} style={color(e.seat)}>
+            <div className="feed__turn-head">
+              <span className="feed__step">
+                {e.index + 1} of {e.total}
+              </span>
+              {who(e.seat)} votes for {who(e.target)}
+            </div>
+            {mind(thoughtFor(key))}
           </div>,
         );
         break;
+      case 'votes_revealed': {
+        if (readOut.has(e.stage)) {
+          // Already read out one at a time: just the final count.
+          const counts = new Map<number, number>();
+          for (const v of e.votes) counts.set(v.target, (counts.get(v.target) ?? 0) + 1);
+          items.push(
+            <div key={key} className="feed__system feed__count">
+              Final count:{' '}
+              {[...counts.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .map(([seat, n], i) => (
+                  <span key={seat}>
+                    {i > 0 && ' · '}
+                    {who(seat)} {n}
+                  </span>
+                ))}
+            </div>,
+          );
+          break;
+        }
+        items.push(
+          <div key={key} className="feed__votes">
+            <div className="feed__votes-title">The votes</div>
+            {e.votes.map((v) => (
+              <div key={v.seat} className={`feed__turn feed__vote${dim(v.seat)}`} style={color(v.seat)}>
+                <div className="feed__turn-head">
+                  {who(v.seat)} voted for {who(v.target)}
+                </div>
+                {mind(thoughtFor(`${key}:${v.seat}`))}
+              </div>
+            ))}
+          </div>,
+        );
+        break;
+      }
       case 'tie':
         items.push(
           <div key={key} className="feed__system">
@@ -183,8 +270,11 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         items.push(
           <div key={key} className="feed__system">
             {e.decisions.map((d) => (
-              <div key={d.seat}>
-                {who(d.seat)} chose to eliminate {who(d.target)}
+              <div key={d.seat} className={`feed__turn${dim(d.seat)}`} style={color(d.seat)}>
+                <div className="feed__turn-head">
+                  {who(d.seat)} chose to eliminate {who(d.target)}
+                </div>
+                {mind(thoughtFor(`${key}:${d.seat}`))}
               </div>
             ))}
             {e.consensus === null ? 'No agreement.' : <>Agreed: {who(e.consensus)} goes.</>}
@@ -218,7 +308,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
       case 'back_rows_revealed':
         for (const row of e.rows) {
           items.push(
-            <div key={`${key}-${row.seat}`} className={`feed__elim ${row.truthful ? '' : 'feed__elim--liar'}`}>
+            <div key={`${key}-${row.seat}`} className={`feed__elim ${row.truthful ? '' : 'feed__elim--liar'}${dim(row.seat)}`}>
               {who(row.seat)} turns over their back row:
               <span className="feed__balls">
                 {row.back.map((b) => (
@@ -239,12 +329,13 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         break;
       case 'ball_picked':
         items.push(
-          <div key={key} className="feed__line feed__pick" style={color(e.seat)}>
-            <div>
+          <div key={key} className={`feed__turn feed__pick${dim(e.seat)}`} style={color(e.seat)}>
+            <div className="feed__turn-head">
               {who(e.seat)} {e.action === 'bin' ? 'bins' : 'wins'} ball {e.index + 1}: <Ball ball={e.ball} size="xs" />
               {e.action === 'win' && <span className="feed__jackpot">Jackpot {formatMoney(e.jackpot)}</span>}
             </div>
             {e.say && <p className="feed__say">“{e.say}”</p>}
+            {mind(thoughtFor(key))}
           </div>,
         );
         break;
@@ -257,7 +348,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         break;
       case 'choice_locked':
         items.push(
-          <div key={key} className="feed__system">
+          <div key={key} className={`feed__system${dim(e.seat)}`}>
             {who(e.seat)} has made their choice.
           </div>,
         );
@@ -266,8 +357,11 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         items.push(
           <div key={key} className={`feed__reveal feed__reveal--${e.outcome}`}>
             {e.choices.map((c) => (
-              <div key={c.seat}>
-                {who(c.seat)} chose <strong className={`choice choice--${c.choice}`}>{c.choice.toUpperCase()}</strong>
+              <div key={c.seat} className={`feed__turn${dim(c.seat)}`} style={color(c.seat)}>
+                <div className="feed__turn-head">
+                  {who(c.seat)} chose <strong className={`choice choice--${c.choice}`}>{c.choice.toUpperCase()}</strong>
+                </div>
+                {mind(thoughtFor(`${key}:${c.seat}`))}
               </div>
             ))}
           </div>,
@@ -275,7 +369,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
         break;
       case 'agent_error':
         items.push(
-          <div key={key} className="feed__error" title={e.message}>
+          <div key={key} className={`feed__error${dim(e.seat)}`} title={e.message}>
             {who(e.seat)} fumbled while {ACTION_LABELS[e.action] ?? e.action}. The host stepped in. <span className="feed__muted">({e.message})</span>
           </div>,
         );
@@ -319,6 +413,16 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
       }}
       aria-live="polite"
     >
+      {focus !== null && (
+        <div className="feed__focus" style={color(focus)} aria-live="off">
+          <span>
+            Following <strong>{name(focus)}</strong>
+          </span>
+          <button type="button" className="linklike" onClick={() => setFocus(null)}>
+            Show everyone
+          </button>
+        </div>
+      )}
       {items}
       {busy.length > 0 && (
         <div className="feed__typing" aria-live="off">
@@ -340,18 +444,45 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
   );
 }
 
-function Thought({ event, who, style }: { event: Extract<GameEvent, { type: 'thoughts' }>; who: ReactNode; style: CSSProperties }) {
-  const [open, setOpen] = useState(false);
+/** A thought shown on its own (no move to sit with). */
+function Thought({ event, who, style, className = '' }: { event: ThoughtEvent; who: ReactNode; style: CSSProperties; className?: string }) {
   return (
-    <div className="feed__thought" style={style}>
+    <div className={`feed__thought${className}`} style={style}>
       <div className="feed__thought-head">
         <span aria-hidden>💭</span> {who} <span className="feed__muted">thinking while {ACTION_LABELS[event.action] ?? event.action}</span>
-        {event.usage && (
-          <span className="feed__muted feed__usage">
-            {(event.usage.latencyMs / 1000).toFixed(1)}s · ${event.usage.costUsd.toFixed(4)}
-          </span>
-        )}
+        <Usage event={event} />
       </div>
+      <ThoughtBody event={event} />
+    </div>
+  );
+}
+
+/** The thinking behind a move, tucked under it in the same card. */
+function MoveThought({ event }: { event: ThoughtEvent }) {
+  return (
+    <div className="feed__mind">
+      <div className="feed__mind-head">
+        <span aria-hidden>💭</span> <span>Thinking</span>
+        <Usage event={event} />
+      </div>
+      <ThoughtBody event={event} />
+    </div>
+  );
+}
+
+function Usage({ event }: { event: ThoughtEvent }) {
+  if (!event.usage) return null;
+  return (
+    <span className="feed__muted feed__usage">
+      {(event.usage.latencyMs / 1000).toFixed(1)}s · ${event.usage.costUsd.toFixed(4)}
+    </span>
+  );
+}
+
+function ThoughtBody({ event }: { event: ThoughtEvent }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
       {event.thoughts && <p className="feed__thought-text">{event.thoughts}</p>}
       {event.reasoning && (
         <div className="feed__reasoning">
@@ -361,6 +492,6 @@ function Thought({ event, who, style }: { event: Extract<GameEvent, { type: 'tho
           {open && <pre className="feed__reasoning-text">{event.reasoning}</pre>}
         </div>
       )}
-    </div>
+    </>
   );
 }

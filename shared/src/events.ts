@@ -58,6 +58,8 @@ export type GameEventBody =
       usage?: Usage;
     }
   | { type: 'vote_cast'; stage: 'r1' | 'r2'; seat: number }
+  /** One vote read out, as on the show: `index` of `total`, with a pause before each. `votes_revealed` follows the last. */
+  | { type: 'vote_revealed'; stage: 'r1' | 'r2'; seat: number; target: number; index: number; total: number }
   | {
       type: 'votes_revealed';
       stage: 'r1' | 'r2';

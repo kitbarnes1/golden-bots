@@ -52,6 +52,8 @@ export const config = {
   maxConcurrentGames: int('MAX_CONCURRENT_GAMES', 3),
   humanTimeoutMs: int('HUMAN_TIMEOUT_MS', 15 * 60_000),
   mockDelayMs: int('MOCK_DELAY_MS', 600),
+  /** Pause before each vote is read out (the last one gets half as long again). 0 = no suspense. */
+  voteRevealMs: int('VOTE_REVEAL_MS', 2500),
 
   /** Start an all-AI game every N minutes (0 = off) to grow the leaderboard. */
   autoplayIntervalMinutes: int('AUTOPLAY_INTERVAL_MINUTES', 0),

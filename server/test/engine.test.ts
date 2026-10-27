@@ -38,13 +38,14 @@ class ScriptedAgent implements Agent {
   }
 }
 
-async function play(seed: number, scripts: Script[] = [], extra: Partial<GameOptions> = {}) {
+async function play(seed: number, scripts: Script[] = [], extra: Partial<GameOptions> = {}, voteRevealMs = 0) {
   const events: GameEvent[] = [];
   const engine = new GameEngine({
     players,
     agents: players.map((p) => new ScriptedAgent(seed + p.seat, scripts[p.seat])),
     options: options(seed, extra),
     emit: (e) => events.push(e),
+    voteRevealMs,
   });
   const result = await engine.run();
   return { result, events, engine };
@@ -262,6 +263,48 @@ describe('GameEngine', () => {
     expect(ofType(afterReveal, 'speech').map((s) => s.say)).toEqual(['Ben reacts', 'Ava reacts']);
     expect(prompts[0]).toMatch(/You chose SPLIT and Ava chose STEAL/);
     expect(events.at(-1)!.type).toBe('game_over');
+  });
+
+  it('reads the votes out one at a time, saving one for whoever goes until last', async () => {
+    // Round 1: Ava, Ben and Cleo vote for Dev; Dev votes for Ava.
+    const scripts: Script[] = [0, 1, 2, 3].map(
+      (seat) => (req) => (req.kind === 'vote' && req.stage === 'r1' ? { target: seat === 3 ? 0 : 3 } : undefined),
+    );
+    const { events } = await play(11, scripts, {}, 20);
+    const read = ofType(events, 'vote_revealed').filter((e) => e.stage === 'r1');
+    expect(read.map((e) => [e.seat, e.target])).toEqual([[0, 3], [1, 3], [3, 0], [2, 3]]);
+    expect(read.map((e) => `${e.index + 1}/${e.total}`)).toEqual(['1/4', '2/4', '3/4', '4/4']);
+    // A pause before each vote, a longer one before the last, then the summary and another pause.
+    const gaps = read.slice(1).map((e, i) => e.ts - read[i]!.ts);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(18);
+    expect(gaps.at(-1)).toBeGreaterThanOrEqual(28);
+    const summary = events[events.indexOf(read.at(-1)!) + 1]!;
+    expect(summary.type).toBe('votes_revealed');
+    const next = events[events.indexOf(summary) + 1]!;
+    expect(next.ts - summary.ts).toBeGreaterThanOrEqual(18);
+    expect(ofType(events, 'eliminated')[0]!.seat).toBe(3);
+    // Round 2 reads out the three remaining votes the same way.
+    expect(ofType(events, 'vote_revealed').filter((e) => e.stage === 'r2').map((e) => e.total)).toEqual([3, 3, 3]);
+  });
+
+  it('stops straight away if the game is stopped while the votes are being read out', async () => {
+    const abort = new AbortController();
+    const events: GameEvent[] = [];
+    const engine = new GameEngine({
+      players,
+      agents: players.map((p) => new ScriptedAgent(3 + p.seat)),
+      options: options(3, { chatSeconds: 0, reflectSeconds: 0 }),
+      signal: abort.signal,
+      voteRevealMs: 60_000,
+      emit: (e) => {
+        events.push(e);
+        if (e.type === 'vote_cast' && events.filter((x) => x.type === 'vote_cast').length === 4) abort.abort();
+      },
+    });
+    const started = Date.now();
+    await expect(engine.run()).rejects.toThrow('Game aborted');
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(ofType(events, 'vote_revealed')).toHaveLength(0);
   });
 
   it('settles a 2-2 tie by consensus of the untied players', async () => {
