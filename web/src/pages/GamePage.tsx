@@ -8,6 +8,7 @@ import { FinalStage } from '../components/FinalStage';
 import { ChatBox, FloorBanner } from '../components/OpenFloor';
 import { Podium } from '../components/Podium';
 import { RoundsReview } from '../components/RoundsReview';
+import { TableStrip } from '../components/TableStrip';
 import { VoteTally } from '../components/VoteTally';
 import { api, ApiError, prefs } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -342,6 +343,12 @@ export function GamePage() {
         </div>
 
         <aside className="game__feed">
+          <TableStrip
+            view={view}
+            reveal={reveal && viewer.omniscient}
+            thinking={thinking}
+            {...(mySeat !== undefined ? { mySeat } : {})}
+          />
           <Feed
             events={shown}
             players={view.players}
