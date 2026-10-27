@@ -12,6 +12,8 @@ import {
 import { GameEngine, GameFatalError, overlap } from '../src/engine/engine.js';
 import { HumanAgent } from '../src/agents/human.js';
 import { MockAgent } from '../src/agents/mock.js';
+import { LlmAgent } from '../src/agents/llm.js';
+import type { ChatResult, OpenRouterClient } from '../src/llm/openrouter.js';
 import { transcript } from '../src/agents/prompts.js';
 import { validateResponse } from '../src/engine/validate.js';
 import { AgentError, type Agent, type AgentContext, type AgentResult } from '../src/agents/types.js';
@@ -683,6 +685,41 @@ describe('exit interviews', () => {
     }
   });
 
+  it("keeps an AI model's answers, which its agent has already checked", async () => {
+    // The real LLM agent, talking to a stand-in OpenRouter that answers like a model would.
+    const client = {
+      async chat(): Promise<ChatResult> {
+        const content = JSON.stringify({ thoughts: "It's over.", say: 'No regrets.', claims_were_true: 'No, I bluffed', saw_it_coming: true, planned_at_start: 'split', trust: 4 });
+        return { content, usage: { promptTokens: 10, completionTokens: 5, costUsd: 0.001, latencyMs: 3 } };
+      },
+    } as unknown as OpenRouterClient;
+    class Model implements Agent {
+      readonly interactive = false;
+      private readonly base: MockAgent;
+      private readonly llm = new LlmAgent(client, 'test/model', { reasoningEffort: 'none', maxTokens: 100, repairAttempts: 0 });
+      constructor(seed: number) {
+        this.base = new MockAgent('mock/honest', seed);
+      }
+      act(request: ActionRequest, ctx: AgentContext, meta: { requestId: string; signal: AbortSignal }): Promise<AgentResult> {
+        return request.kind === 'interview' ? this.llm.act(request, ctx, meta) : this.base.act(request, ctx, meta);
+      }
+    }
+    const events: GameEvent[] = [];
+    const warnings: string[] = [];
+    const engine = new GameEngine({
+      players,
+      agents: players.map((p) => new Model(50 + p.seat)),
+      options: options(50, { chatSeconds: 0, reflectSeconds: 0, finalChatSeconds: 0 }),
+      emit: (e) => events.push(e),
+      warn: (message) => warnings.push(message),
+    });
+    await engine.run();
+    const interviews = ofType(events, 'interview');
+    expect(interviews).toHaveLength(4);
+    expect(interviews.find((i) => i.when === 'final')!.answers).toMatchObject({ say: 'No regrets.', claimsTrue: false, planned: 'split', trust: 4 });
+    expect(warnings).toEqual([]);
+  });
+
   it("doesn't hold the game up, but waits for every answer before it ends", async () => {
     const slow = (request: Extract<ActionRequest, { kind: 'interview' }>) =>
       new Promise((r) => setTimeout(() => r({ say: `${request.when} answer`, claimsTrue: true, sawItComing: true }), 150));
@@ -716,7 +753,14 @@ describe('exit interviews', () => {
           p.seat === 3,
         ),
     );
-    const engine = new GameEngine({ players, agents, options: options(40, { chatSeconds: 0, reflectSeconds: 0, finalChatSeconds: 0, readAtMyPace: false }), emit: (e) => events.push(e) });
+    const warnings: unknown[] = [];
+    const engine = new GameEngine({
+      players,
+      agents,
+      options: options(40, { chatSeconds: 0, reflectSeconds: 0, finalChatSeconds: 0, readAtMyPace: false }),
+      emit: (e) => events.push(e),
+      warn: (message, detail) => warnings.push({ message, seat: detail.seat }),
+    });
     const result = await engine.run();
     const asked = ofType(events, 'interview').map((i) => i.seat);
     expect(asked).not.toContain(1); // threw
@@ -725,6 +769,14 @@ describe('exit interviews', () => {
     expect(asked).toEqual([0]);
     expect(ofType(events, 'agent_error')).toHaveLength(0);
     expect(result.stats.map((s) => s.invalidResponses)).toEqual([0, 0, 0, 0]);
+    // Skipped, but not silently: the server log says why.
+    expect(warnings).toEqual(
+      expect.arrayContaining([
+        { message: 'Interview skipped: the model failed', seat: 1 },
+        { message: 'Interview skipped: unusable answer', seat: 2 },
+      ]),
+    );
+    expect(warnings).toHaveLength(2);
     expect(result.stats[3]!.interview).toBeNull();
     // A usable but failed answer still costs: seat 2's call is counted.
     expect(result.stats[2]!.costUsd).toBeGreaterThan(0);
