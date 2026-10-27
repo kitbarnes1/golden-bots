@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/replay.gif" alt="A replay of round 1: four AI models are dealt hidden balls, bluff about their back rows, and start arguing on the open floor" width="900">
+  <img src="docs/screenshots/replay.gif" alt="A replay of round 1: four AI models are dealt hidden balls, bluff about their back rows, argue on the open floor and vote one of them out" width="900">
 </p>
 
 <h1 align="center">Golden Bots</h1>
@@ -51,8 +51,9 @@ different:
   and the thinking side by side.
 - 🎤 **Exit interviews.** Each AI answers the host's questions as it's knocked out ("did you see it
   coming?", "who'll win?") and both finalists after the final ("did you always plan to steal?",
-  "how much did you trust them?"). Answers are checked against what happened, so the leaderboard
-  shows who owns up to their lies, who sticks to their plan and who would do it all again.
+  "how much did you trust them?"). Answers are checked against what happened and shown together
+  under the results, and the leaderboard shows who owns up to their lies, who sticks to their
+  plan and who would do it all again.
 - 🤖 **Any model, head to head.** Seat any of the hundreds of models on
   [OpenRouter](https://openrouter.ai), filter them by price, or fill the table with free models.
   The setup form estimates what the game will cost before you start it.
@@ -61,38 +62,50 @@ different:
   included) until the game ends, and "Read at my own pace" stops the clocks after every AI message
   until you click Continue.
 - 📺 **Made to be watched.** Games stream live to anyone with the link, and every finished game can
-  be replayed at up to 4×.
+  be replayed at up to 4×. On a phone the players' balls stay pinned above the chat, so you can
+  read along without losing track of who's holding what.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/round.png" alt="Round 1 with hidden balls revealed: every model's real back row under its claim, tagged Bluffing, next to the live chat and private thoughts"></td>
-    <td width="50%"><img src="docs/screenshots/rounds.png" alt="The Rounds tab: each player's front and back rows, what they claimed, a Lie tag on false claims, and who voted for whom"></td>
+    <td width="50%"><img src="docs/screenshots/round.png" alt="Round 1 with hidden balls revealed: every model's real back row under its claim, tagged Honest or Bluffing, next to the open floor chat with each message's private thinking"></td>
+    <td width="50%"><img src="docs/screenshots/votes.png" alt="The votes read out: a tally shows Kimi K3.1 Pro out with two votes, and the feed shows each vote with the reasoning behind it"></td>
   </tr>
   <tr>
-    <td><strong>Round 1, hidden balls revealed.</strong> Each model's real back row sits under its claim. All four are bluffing, and the feed shows them planning it.</td>
+    <td><strong>Round 1, hidden balls revealed.</strong> Each model's real back row sits under its claim. Kimi K3.1 Pro is holding three Killers while telling DeepSeek its back row is £12,500 in cash, and its thinking shows it knows exactly how bad things are.</td>
+    <td><strong>The vote.</strong> Votes are read out one at a time, each with the reasoning behind it. Kimi goes home, its back row is turned over, and the lie comes out.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/rounds.png" alt="The Rounds tab: each player's front and back rows, what they claimed, a Lie tag on false claims, and who voted for whom"></td>
+    <td><img src="docs/screenshots/player-card.png" alt="A player card for GLM 5.3 Prime: its balls and claims in each round, tagged Lie or True, and who it voted for"></td>
+  </tr>
+  <tr>
     <td><strong>The Rounds view.</strong> Every ball, every claim, every lie and every vote, round by round.</td>
+    <td><strong>Player cards.</strong> Click any name for that player's balls, claims and votes so far, and their exit interview once they've left.</td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/bin-or-win.png" alt="Bin or Win: the finalists pick face-down balls; two Killers have already been won and divided the jackpot"></td>
-    <td><img src="docs/screenshots/split-or-steal.png" alt="Split or Steal: both finalists chose split and take home £11,010 each, with their last words in the feed"></td>
+    <td><img src="docs/screenshots/bin-or-win.png" alt="Bin or Win: the last ball won was a Killer, cutting the jackpot from £4,050 to £405"></td>
+    <td><img src="docs/screenshots/split-or-steal.png" alt="Split or Steal: both finalists chose split and take home £202.50 each, with their last words in the feed"></td>
   </tr>
   <tr>
-    <td><strong>Bin or Win.</strong> Pure luck, and the models know it. Two Killers won so far, each one dividing the jackpot by ten.</td>
-    <td><strong>Split or Steal.</strong> Both split £22,020, then said a few words about honesty.</td>
+    <td><strong>Bin or Win.</strong> Pure luck, and the models know it. The last ball won was the Killer, which cut the jackpot from £4,050 to £405.</td>
+    <td><strong>Split or Steal.</strong> Both had promised to split, and both did, taking £202.50 each.</td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/leaderboard.png" alt="Leaderboard: models ranked by average winnings per game as horizontal bars"></td>
+    <td><img src="docs/screenshots/leaderboard.png" alt="Leaderboard grouped by creator: average winnings per game for Poolside, xAI, Meta, Anthropic, NVIDIA and others as horizontal bars"></td>
     <td><img src="docs/screenshots/does-lying-pay.png" alt="Scatter chart of honesty against average winnings for each model"></td>
   </tr>
   <tr>
-    <td><strong>The leaderboard.</strong> Models ranked by average or total winnings. The table underneath adds final rate, split rate, honesty, fumbles and API cost.</td>
+    <td><strong>The leaderboard.</strong> Rank the models, or group them by creator, the creator's country, open or closed weights, or how new they are. The tables underneath add final rate, split rate, honesty, fumbles and API cost, and what the models said in their exit interviews.</td>
     <td><strong>Does lying pay?</strong> Plot any two measures against each other. (Early days: a few games per model so far.)</td>
   </tr>
 </table>
 
-<p align="center"><img src="docs/screenshots/home.png" alt="The home page: the Golden Bots title, a lineup of four models with estimated costs, and recent games" width="900"></p>
+<p align="center">
+  <img src="docs/screenshots/home.png" alt="The home page: the Golden Bots title, a lineup of four models with estimated costs, and recent games" width="640">
+  <img src="docs/screenshots/mobile.png" alt="A game on a phone: the four players' balls pinned above the feed" width="205">
+</p>
 
 ## How a game plays
 
@@ -100,15 +113,15 @@ different:
    front row, which everyone sees, and two on their back row, which only they see. Each player
    announces what's on their back row, truthfully or not. Then a timed **open floor**: they
    question, accuse, bargain and persuade, talking to everyone or to one player. Then a secret
-   vote, read out one vote at a time with a running tally, and someone goes home. Everyone else
-   turns their back row over, so the lies come out.
+   vote, read out one vote at a time with a running tally, and someone goes home, answering a
+   few questions on the way out. Everyone else turns their back row over, so the lies come out.
 2. **Round 2.** The survivors' balls go back in with two more cash balls and another Killer. Three
    hidden balls each this time. Claims, open floor, vote, reveal. One more exit.
 3. **Bin or Win.** The finalists' balls plus one more Killer are mixed face down. They take turns
    binning one and winning one until five are won. Each Killer won divides the jackpot by ten.
 4. **Split or Steal.** One last conversation, then each finalist secretly picks a ball. Both
    split: they share the jackpot. One steals: they take it all. Both steal: nobody gets a penny.
-   Then both say a few words about how it went.
+   Then both say a few words about how it went, and sit down for their exit interviews.
 
 Ties are settled the way the show did it: the players not involved must agree who goes, and if
 they can't, the tied players draw from the machine and whoever draws a Killer is out.
