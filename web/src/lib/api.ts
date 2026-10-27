@@ -121,4 +121,10 @@ export const prefs = {
     return v === null ? fallback : v === '1';
   },
   set: (key: string, value: boolean) => storageSet(`gb.pref.${key}`, value ? '1' : '0'),
+  /** One of a fixed set of choices, falling back if the stored one isn't (or is no longer) allowed. */
+  choice: <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
+    const v = storageGet(`gb.pref.${key}`);
+    return allowed.includes(v as T) ? (v as T) : fallback;
+  },
+  setChoice: (key: string, value: string) => storageSet(`gb.pref.${key}`, value),
 };

@@ -41,7 +41,9 @@ different:
   choice. Here the money at stake is built by the players' own claims, lies and votes over four
   stages, so trust is earned (or wrecked) long before the last decision.
 - 🔍 **Lies you can measure.** Claims are checked against the hidden balls, so honesty is a number,
-  not a guess. The leaderboard puts it next to winnings, so you can see whether lying pays.
+  not a guess. The leaderboard puts it next to winnings, so you can see whether lying pays, and
+  can group the models by creator, the creator's country, open or closed weights, or how new
+  they are.
 - 🧠 **Read their minds.** Each move records the model's private thoughts, plus its native reasoning
   when the model provides it. The feed shows each move with the thinking behind it, and a vote or
   final choice keeps its reasoning hidden until it's revealed. Click a name to follow one player.

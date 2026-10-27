@@ -3,7 +3,7 @@ import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import type { ApiKeyStatus, CreateGameRequest, GameDetail, HumanActionRequest, ServerInfo } from '@gb/shared';
-import { canSee } from '@gb/shared';
+import { canSee, modelFacts } from '@gb/shared';
 import { MOCK_STRATEGIES } from './agents/mock.js';
 import type { OpenRouterKey } from './apiKey.js';
 import { AdminAuth } from './auth.js';
@@ -306,11 +306,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get('/api/leaderboard', async (req) => {
     const q = req.query as { includeUnranked?: string; includeHumans?: string };
-    return db.leaderboard({
+    const board = db.leaderboard({
       includeUnranked: q.includeUnranked === '1' || q.includeUnranked === 'true',
       // Humans are left out unless asked for: the leaderboard is about the models.
       includeHumans: q.includeHumans === '1' || q.includeHumans === 'true',
     });
+    // Who made each model, where, and how open and how new it is, for grouping on the page.
+    const listed = await catalog.byId();
+    for (const row of board.rows) {
+      if (row.kind === 'ai') row.facts = modelFacts(row.key, listed.get(row.key) ?? listed.get(row.key.replace(/:free$/, '')));
+    }
+    return board;
   });
 
   await serveWebApp(app, cfg.webDist);

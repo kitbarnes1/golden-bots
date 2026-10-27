@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatMoney, type LeaderboardResponse, type LeaderboardRow } from '@gb/shared';
+import { formatMoney, groupRows, type GroupBy, type LeaderboardResponse, type LeaderboardRow } from '@gb/shared';
 import { CompareChart } from '../components/CompareChart';
 import { RankChart } from '../components/RankChart';
 import { api, prefs } from '../lib/api';
@@ -47,8 +47,41 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
   { key: 'costUsd', label: 'API cost', title: 'Total OpenRouter spend for this contestant', numeric: true },
 ];
 
+/** Ways to add contestants up, so whole labs, countries and kinds of model can be compared. */
+const GROUPINGS: { by: GroupBy; label: string; of: string; column: string; note?: string }[] = [
+  { by: 'model', label: 'Model', of: 'model', column: 'Contestant' },
+  { by: 'lab', label: 'Creator', of: 'creator', column: 'Creator', note: 'Models are grouped by the lab that made them.' },
+  {
+    by: 'country',
+    label: "Creator's country",
+    of: "creator's country",
+    column: 'Country',
+    note: 'Models are grouped by where the lab that made them is based.',
+  },
+  {
+    by: 'openness',
+    label: 'Open or closed',
+    of: 'open or closed weights',
+    column: 'Weights',
+    note: 'Open weights means the model itself is published (OpenRouter links to it on Hugging Face). Closed models are only available through their maker.',
+  },
+  {
+    by: 'generation',
+    label: 'How new',
+    of: 'how new the model is',
+    column: 'Released',
+    note: 'Models are grouped by when OpenRouter added them: in the last six months, or before.',
+  },
+];
+const GROUP_IDS = GROUPINGS.map((g) => g.by);
+/** Fewer games than this and a group is faded: too few to read much into. */
+const FEW_GAMES = 5;
+
 export function LeaderboardPage() {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
+  const [groupBy, setGroupBy] = useState<GroupBy>(() => prefs.choice('lb.groupBy', GROUP_IDS, 'model'));
+  const grouping = GROUPINGS.find((g) => g.by === groupBy)!;
+  const grouped = groupBy !== 'model';
   const [error, setError] = useState<string | null>(null);
   // Off by default (a new key, so an old "on" from before doesn't stick).
   const [includeHumans, setIncludeHumans] = useState(() => prefs.get('lb.includeHumans', false));
@@ -66,18 +99,20 @@ export function LeaderboardPage() {
     );
   }, [includeHumans, includeUnranked]);
 
-  const rows = useMemo(() => {
-    if (!data) return [];
-    return [...data.rows].sort((a, b) => {
-      const x = metric(a, sort.key);
-      const y = metric(b, sort.key);
-      const c = typeof x === 'string' ? x.localeCompare(y as string) : x - (y as number);
-      return sort.desc ? -c : c;
-    });
-  }, [data, sort]);
+  const shown = useMemo(() => (data ? groupRows(data.rows, groupBy) : []), [data, groupBy]);
+  const rows = useMemo(
+    () =>
+      [...shown].sort((a, b) => {
+        const x = metric(a, sort.key);
+        const y = metric(b, sort.key);
+        const c = typeof x === 'string' ? x.localeCompare(y as string) : x - (y as number);
+        return sort.desc ? -c : c;
+      }),
+    [shown, sort],
+  );
 
-  const labels = useMemo(() => new Map((data?.rows ?? []).map((r) => [r.key, r.label])), [data]);
-  const leader = data?.rows[0]?.key ?? null;
+  const labels = useMemo(() => new Map(shown.map((r) => [r.key, r.label])), [shown]);
+  const leader = shown[0]?.key ?? null;
   const selected = highlight && labels.has(highlight) ? highlight : leader;
 
   return (
@@ -112,6 +147,34 @@ export function LeaderboardPage() {
         </label>
       </div>
 
+      <div className="lb__group">
+        <span className="lb__group-label" id="lb-group">
+          Group by
+        </span>
+        <div className="lb__group-options" role="group" aria-labelledby="lb-group">
+          {GROUPINGS.map((g) => (
+            <button
+              key={g.by}
+              type="button"
+              className="picker__tier"
+              aria-pressed={groupBy === g.by}
+              onClick={() => {
+                setGroupBy(g.by);
+                prefs.setChoice('lb.groupBy', g.by);
+              }}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        {grouped && (
+          <p className="muted small lb__group-note">
+            {grouping.note} Each group adds up every seat its models played, so a game with two of its models counts twice.
+            Groups with fewer than {FEW_GAMES} games are faded: too few to read much into.
+          </p>
+        )}
+      </div>
+
       {error && <p className="error">{error}</p>}
 
       {data && data.rows.length === 0 && (
@@ -124,22 +187,22 @@ export function LeaderboardPage() {
         <>
           <section className="card">
             <div className="card__head">
-              <h2>Winnings by model</h2>
+              <h2>Winnings by {grouping.of}</h2>
             </div>
             <p className="muted small">
-              Highest first. Click a bar (or a row in the table) to highlight that contestant everywhere on this page.
+              Highest first. Click a bar (or a row in the table) to highlight that {grouped ? 'group' : 'contestant'} everywhere on this page.
             </p>
-            <RankChart rows={data.rows} highlight={selected} onSelect={setHighlight} />
+            <RankChart rows={shown} highlight={selected} onSelect={setHighlight} />
           </section>
 
           <section className="card">
             <div className="card__head">
-              <h2>Compare models</h2>
+              <h2>Compare {grouped ? 'groups' : 'models'}</h2>
             </div>
             <p className="muted small">
-              Each dot is a contestant. Pick what goes across and up, for example honesty against winnings: does lying pay?
+              Each dot is a {grouped ? 'group' : 'contestant'}. Pick what goes across and up, for example honesty against winnings: does lying pay?
             </p>
-            <CompareChart rows={data.rows} highlight={selected} onSelect={setHighlight} />
+            <CompareChart rows={shown} highlight={selected} onSelect={setHighlight} />
           </section>
 
           <section className="card table-card">
@@ -154,7 +217,7 @@ export function LeaderboardPage() {
                           type="button"
                           onClick={() => setSort((s) => ({ key: c.key, desc: s.key === c.key ? !s.desc : c.numeric }))}
                         >
-                          {c.label}
+                          {c.key === 'label' ? grouping.column : c.label}
                           {sort.key === c.key ? (sort.desc ? ' ↓' : ' ↑') : ''}
                         </button>
                       </th>
@@ -166,13 +229,20 @@ export function LeaderboardPage() {
                   {rows.map((r, i) => (
                     <tr
                       key={r.key}
-                      className={r.key === selected ? 'lb__row--hi' : ''}
+                      className={`${r.key === selected ? 'lb__row--hi' : ''} ${grouped && r.games < FEW_GAMES ? 'lb__row--few' : ''}`}
+                      {...(grouped && r.games < FEW_GAMES ? { title: `Only ${r.games} game${r.games === 1 ? '' : 's'}: too few to read much into` } : {})}
                       onClick={() => setHighlight(r.key)}
                     >
                       <td className="num">{i + 1}</td>
                       <td>
                         <div className="lb__name">{r.label}</div>
-                        <div className="lb__key">{r.kind === 'human' ? 'human' : r.key}</div>
+                        <div className="lb__key" title={r.members?.join(', ')}>
+                          {r.members
+                            ? `${r.members.length} ${r.kind === 'ai' ? 'model' : r.kind === 'mock' ? 'bot' : 'player'}${r.members.length === 1 ? '' : 's'}: ${r.members.slice(0, 3).join(', ')}${r.members.length > 3 ? ', …' : ''}`
+                            : r.kind === 'human'
+                              ? 'human'
+                              : r.key}
+                        </div>
                       </td>
                       <td className="num">{r.games}</td>
                       <td className="num strong">{formatMoney(Math.round(r.avgWinnings))}</td>

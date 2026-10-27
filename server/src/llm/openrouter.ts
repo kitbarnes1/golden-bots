@@ -228,6 +228,8 @@ interface RawModel {
   pricing?: { prompt?: string; completion?: string };
   supported_parameters?: string[];
   architecture?: { input_modalities?: string[]; output_modalities?: string[] };
+  /** Set for models whose weights are published, e.g. "meta-llama/Llama-4-Maverick-17B-128E-Instruct". */
+  hugging_face_id?: string | null;
 }
 
 export function parseModel(m: RawModel): CatalogModel {
@@ -244,6 +246,7 @@ export function parseModel(m: RawModel): CatalogModel {
     ...(Number.isFinite(completion) ? { completionPrice: completion * 1e6 } : {}),
     ...(m.context_length ? { contextLength: m.context_length } : {}),
     supportsReasoning: m.supported_parameters?.includes('reasoning') ?? false,
+    openWeights: Boolean(m.hugging_face_id),
     created: m.created ?? 0,
     // Text out only: music and image generators also return some text.
     textChat: inputs.includes('text') && outputs.length > 0 && outputs.every((o) => o === 'text'),

@@ -213,9 +213,16 @@ describe('OpenRouterClient', () => {
     handler = () => ({
       json: {
         data: [
-          { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Meta: Llama 3.3 70B (free)', created: 1, pricing: { prompt: '0', completion: '0' } },
+          {
+            id: 'meta-llama/llama-3.3-70b-instruct:free',
+            name: 'Meta: Llama 3.3 70B (free)',
+            created: 1,
+            pricing: { prompt: '0', completion: '0' },
+            hugging_face_id: 'meta-llama/Llama-3.3-70B-Instruct',
+          },
           {
             id: 'openai/gpt-5',
+            hugging_face_id: '',
             name: 'OpenAI: GPT-5',
             created: 2,
             context_length: 400000,
@@ -227,8 +234,8 @@ describe('OpenRouterClient', () => {
       },
     });
     const [free, gpt] = await client().listModels();
-    expect(free).toMatchObject({ id: 'meta-llama/llama-3.3-70b-instruct:free', free: true });
-    expect(gpt).toMatchObject({ name: 'GPT-5', promptPrice: 1.25, completionPrice: 10, supportsReasoning: true, free: false, textChat: true, created: 2 });
+    expect(free).toMatchObject({ id: 'meta-llama/llama-3.3-70b-instruct:free', free: true, openWeights: true });
+    expect(gpt).toMatchObject({ name: 'GPT-5', promptPrice: 1.25, completionPrice: 10, supportsReasoning: true, free: false, textChat: true, created: 2, openWeights: false });
   });
 });
 
