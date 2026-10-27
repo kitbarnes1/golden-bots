@@ -54,6 +54,16 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [events.length, showThoughts, activity?.seats.length, !footer]);
+  // And when the box itself changes size (it grows to fill the screen as the page scrolls).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Each private thought goes with the move it explains (votes and final choices wait for their reveal).
   const paired = useMemo(() => pairThoughts(events), [events]);

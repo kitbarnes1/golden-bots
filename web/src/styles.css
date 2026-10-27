@@ -1195,9 +1195,9 @@ textarea {
   color: var(--red);
 }
 
-/* Transcript */
+/* Transcript. --fill-top is where it starts on screen (GamePage keeps it up to date), so it ends just above the bottom. */
 .feed {
-  height: calc(100vh - 110px);
+  height: calc(100vh - var(--fill-top, 94px) - 16px);
   min-height: 420px;
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.22);
@@ -1485,6 +1485,29 @@ textarea {
 }
 .iv__trust-off {
   color: rgba(255, 255, 255, 0.15);
+}
+/* Everyone's exit interview, under the results */
+.exits {
+  display: grid;
+  gap: 12px;
+}
+.exits__one {
+  --seat: var(--blue);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--seat);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.exits__one h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+.exits__one h3 .muted {
+  font-family: var(--font);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
 }
 @media (max-width: 600px) {
   .iv__row {
