@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link, useParams } from 'react-router';
 import { formatMoney, type GameEvent } from '@gb/shared';
 import { ActionPanel } from '../components/ActionPanel';
 import { BinOrWinBoard } from '../components/BinOrWinBoard';
 import { Feed } from '../components/Feed';
 import { FinalStage } from '../components/FinalStage';
+import { InterviewAnswers } from '../components/Interview';
 import { ChatBox, FloorBanner } from '../components/OpenFloor';
 import { Podium } from '../components/Podium';
 import { RoundsReview } from '../components/RoundsReview';
@@ -12,7 +13,7 @@ import { TableStrip } from '../components/TableStrip';
 import { VoteTally } from '../components/VoteTally';
 import { api, ApiError, prefs } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { buildView, STAGE_LABELS } from '../lib/gameState';
+import { buildView, SEAT_COLORS, STAGE_LABELS, type SeatView } from '../lib/gameState';
 import { useGame } from '../lib/useGame';
 
 /** Events that don't change anything on screen, so replays skip straight past them. */
@@ -106,6 +107,9 @@ export function GamePage() {
     const t = setTimeout(() => setCursor(next + 1), e ? replayDelay(e, speed) : 0);
     return () => clearTimeout(t);
   }, [playing, cursor, events, speed, showThoughts]);
+
+  const [feedBox, setFeedBox] = useState<HTMLElement | null>(null);
+  useFillScreen(feedBox);
 
   if (game.error) {
     return (
@@ -314,7 +318,7 @@ export function GamePage() {
             />
           )}
 
-          {tab === 'stage' && view.stage === 'over' && <Summary view={view} />}
+          {tab === 'stage' && view.stage === 'over' && <Summary view={view} events={shown} />}
           {view.error && <p className="error">The game stopped: {view.error}</p>}
 
           {myAwaiting && (
@@ -350,7 +354,7 @@ export function GamePage() {
           </div>
         </div>
 
-        <aside className="game__feed">
+        <aside className="game__feed" ref={setFeedBox}>
           <TableStrip
             view={view}
             reveal={reveal && viewer.omniscient}
@@ -383,25 +387,87 @@ export function GamePage() {
   );
 }
 
-function Summary({ view }: { view: ReturnType<typeof buildView> }) {
+const outcome = (s: SeatView) =>
+  s.eliminatedStage
+    ? `eliminated in round ${s.eliminatedStage === 'r1' ? 1 : 2}`
+    : `chose ${s.finalChoice?.toUpperCase()} and won ${formatMoney(s.winnings ?? 0)}`;
+
+function Summary({ view, events }: { view: ReturnType<typeof buildView>; events: GameEvent[] }) {
+  const ranked = [...view.seats].sort((a, b) => (b.winnings ?? -1) - (a.winnings ?? -1));
+  const interviews = new Map(events.flatMap((e) => (e.type === 'interview' ? [[e.seat, e] as const] : [])));
+  const ais = ranked.filter((s) => s.info.kind !== 'human');
+  const who = (seat: number) => <strong>{view.players[seat]?.name ?? `Player ${seat + 1}`}</strong>;
   return (
-    <section className="summary">
-      <h2>Results</h2>
-      <ol>
-        {[...view.seats]
-          .sort((a, b) => (b.winnings ?? -1) - (a.winnings ?? -1))
-          .map((s) => (
+    <>
+      <section className="summary">
+        <h2>Results</h2>
+        <ol>
+          {ranked.map((s) => (
             <li key={s.info.seat}>
-              <strong>{s.info.name}</strong>{' '}
-              {s.eliminatedStage
-                ? `eliminated in round ${s.eliminatedStage === 'r1' ? 1 : 2}`
-                : `chose ${s.finalChoice?.toUpperCase()} and won ${formatMoney(s.winnings ?? 0)}`}
+              <strong>{s.info.name}</strong> {outcome(s)}
             </li>
           ))}
-      </ol>
-      <Link className="btn btn--gold" to="/">
-        Play again
-      </Link>
-    </section>
+        </ol>
+        <Link className="btn btn--gold" to="/">
+          Play again
+        </Link>
+      </section>
+      {/* Games from before the interviews started have none, so they skip this. */}
+      {interviews.size > 0 && (
+        <section className="summary">
+          <h2>Exit interviews</h2>
+          <p className="muted small">
+            Each AI answered a few questions on the way out. Their answers are checked against what really happened.
+            {ais.length < ranked.length && " Humans aren't interviewed."}
+          </p>
+          <div className="exits">
+            {ais.map((s) => {
+              const e = interviews.get(s.info.seat);
+              return (
+                <article key={s.info.seat} className="exits__one" style={{ '--seat': SEAT_COLORS[s.info.seat % SEAT_COLORS.length] } as CSSProperties}>
+                  <h3>
+                    {s.info.name} <span className="muted small">{outcome(s)}</span>
+                  </h3>
+                  {e ? <InterviewAnswers event={e} events={events} who={who} /> : <p className="muted small">No interview: they didn't answer.</p>}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </>
   );
+}
+
+/**
+ * Keeps `--fill-top` on a sticky panel set to where it starts on screen, so CSS can make it
+ * reach just to the bottom of the screen however far down the notices above have pushed it.
+ * As the page scrolls it rises until it sticks under the header, growing to fill the space.
+ */
+function useFillScreen(el: HTMLElement | null) {
+  useLayoutEffect(() => {
+    if (!el) return;
+    let frame = 0;
+    const fit = () => {
+      frame = 0;
+      const style = getComputedStyle(el);
+      if (style.position !== 'sticky') return; // narrow screens lay it out another way
+      const top = Math.max(el.getBoundingClientRect().top, parseFloat(style.top) || 0);
+      el.style.setProperty('--fill-top', `${Math.round(top)}px`);
+    };
+    const later = () => {
+      if (!frame) frame = requestAnimationFrame(fit);
+    };
+    fit();
+    const observer = new ResizeObserver(later);
+    observer.observe(el.closest('.page') ?? document.body);
+    window.addEventListener('scroll', later, { passive: true });
+    window.addEventListener('resize', later);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('scroll', later);
+      window.removeEventListener('resize', later);
+    };
+  }, [el]);
 }

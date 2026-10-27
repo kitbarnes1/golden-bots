@@ -66,7 +66,9 @@ four values from `terraform output github_actions_variables`: `AWS_REGION`,
 
 Then merge to `main` (or run the **Deploy** workflow by hand). The workflow runs the tests,
 builds a `linux/arm64` image, pushes it to ECR and runs `/opt/golden-balls/deploy.sh <sha>` on
-the instance. A minute later the site is live at `https://<subdomain>.<your domain>`.
+the instance. A minute later the site is live at `https://<subdomain>.<your domain>`. Deploys
+run one at a time, and a push that GitHub delivers after a newer one is skipped, so the site
+never slips back to an older version.
 
 The deploy role trusts only pushes to `main` of your repository, so forks and pull requests can't
 deploy.
