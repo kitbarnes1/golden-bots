@@ -72,6 +72,22 @@ export interface LeaderboardRow {
   invalidResponses: number;
   costUsd: number;
   lastPlayed: number;
+  /** For AI models: who made it, where, whether the weights are open, and when it came out. */
+  facts?: ModelFacts;
+  /** For a group of contestants (by creator, country...): the ones in it. */
+  members?: string[];
+}
+
+export interface ModelFacts {
+  /** The creator's id: the first part of the model id, e.g. "openai". */
+  lab: string;
+  labName: string;
+  /** Where the creator is based; null if we don't know. */
+  country: string | null;
+  /** Published weights (OpenRouter lists a Hugging Face repo); null if the model isn't in the catalogue. */
+  openWeights: boolean | null;
+  /** When OpenRouter added it (ms since 1970); null if unknown. */
+  released: number | null;
 }
 
 export interface LeaderboardHistoryPoint {
@@ -100,6 +116,10 @@ export interface ModelOption {
   completionPrice?: number;
   contextLength?: number;
   supportsReasoning?: boolean;
+  /** The weights are published (OpenRouter lists a Hugging Face repo for it). */
+  openWeights?: boolean;
+  /** When OpenRouter added it, ms since 1970. */
+  released?: number;
 }
 
 export interface MockStrategy {

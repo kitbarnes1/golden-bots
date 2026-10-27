@@ -159,6 +159,13 @@ export class ModelCatalog {
     return this.inflight;
   }
 
+  /** Every model in OpenRouter's catalogue by id, including ones refused or failing checks: for facts like release dates. */
+  async byId(): Promise<Map<string, ModelOption>> {
+    const client = this.client();
+    if (!client) return new Map();
+    return new Map((await this.listAll(client)).map((m) => [m.id, m]));
+  }
+
   /** Best label we have for an id, without waiting on the network. */
   label(id: string): string {
     return this.cache?.models.find((m) => m.id === id)?.name ?? labelFromId(id);
@@ -171,7 +178,11 @@ export class ModelCatalog {
       const featured = pickFeatured(all, this.configured);
       const rank = new Map(featured.map((id, i) => [id, i]));
       const models = all
-        .map(({ created: _created, textChat: _textChat, ...m }): ModelOption => ({ ...m, featured: rank.has(m.id) }))
+        .map(({ created, textChat: _textChat, ...m }): ModelOption => ({
+          ...m,
+          featured: rank.has(m.id),
+          ...(created ? { released: created * 1000 } : {}),
+        }))
         .sort((a, b) => {
           if (a.featured !== b.featured) return a.featured ? -1 : 1;
           if (a.featured) return rank.get(a.id)! - rank.get(b.id)!;

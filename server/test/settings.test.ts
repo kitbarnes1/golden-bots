@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
-import type { ApiKeyStatus, CreateGameResponse, ModelOption, ServerInfo } from '@gb/shared';
+import type { ApiKeyStatus, CreateGameResponse, LeaderboardResponse, ModelOption, ServerInfo } from '@gb/shared';
 import { OpenRouterKey } from '../src/apiKey.js';
 import { buildApp } from '../src/app.js';
 import { config, type Config } from '../src/config.js';
@@ -251,6 +251,17 @@ describe('OpenRouter key settings', () => {
     await waitFor(() => !manager.isRunning(first.id), 15_000);
     expect(moves().length).toBeGreaterThan(1);
     expect(new Set(moves().map((s) => s.key))).toEqual(new Set([GOOD]));
+
+    // The leaderboard says who made each model and what the catalogue knows about it.
+    const board = (await call('/api/leaderboard?includeUnranked=1')).json<LeaderboardResponse>();
+    expect(board.rows.find((r) => r.key === 'test/model')?.facts).toEqual({
+      lab: 'test',
+      labName: 'Test',
+      country: null,
+      openWeights: false,
+      released: 1000,
+    });
+    expect(board.rows.find((r) => r.kind === 'mock')?.facts).toBeUndefined();
 
     seen = [];
     const second = (await call({ method: 'POST', url: '/api/games', payload: lineup })).json<CreateGameResponse>();
