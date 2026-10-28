@@ -86,12 +86,28 @@ describe('response parsing', () => {
       [{ kind: 'pick', action: 'win', available: [0, 4, 7] }, { ball: 5, say: 'Five.' }],
       [{ kind: 'final_choice' }, { choice: 'split' }],
       [
-        { kind: 'interview', when: 'eliminated', candidates: [1, 2] },
-        { say: 'Fair enough.', claims_were_true: 'No, I bluffed', saw_it_coming: true, will_win: 'GPT-5', would_do_differently: 'Lie less.' },
+        { kind: 'interview', when: 'eliminated', candidates: [1, 2], others: [1, 2, 3] },
+        {
+          say: 'Fair enough.',
+          claims_were_true: 'No, I bluffed',
+          saw_it_coming: true,
+          will_win: 'GPT-5',
+          would_do_differently: 'Lie less.',
+          trust_each: { 'GPT-5': 2, 'Gemini 2.5 Pro': '4', Kit: 5 },
+        },
       ],
       [
-        { kind: 'interview', when: 'final', candidates: [], opponent: 1 },
-        { say: 'Done.', claims_were_true: true, planned_at_start: 'Steal', decided_when: 'round 2', why: 'Money.', trust: '4', same_again: 'yes' },
+        { kind: 'interview', when: 'final', candidates: [], opponent: 1, others: [1, 2, 3] },
+        {
+          say: 'Done.',
+          claims_were_true: true,
+          planned_at_start: 'Steal',
+          decided_when: 'round 2',
+          why: 'Money.',
+          trust: '4',
+          same_again: 'yes',
+          trust_each: [{ name: 'GPT-5', score: 3 }],
+        },
       ],
     ];
     for (const [request, json] of cases) {

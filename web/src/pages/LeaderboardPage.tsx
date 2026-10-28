@@ -274,7 +274,13 @@ export function LeaderboardPage() {
             </div>
           </section>
 
-          <InterviewTable rows={rows.filter((r) => r.interviews > 0)} selected={selected} onSelect={setHighlight} column={grouping.column} />
+          {/* Humans aren't interviewed, but the AIs rate how much they trusted them. */}
+          <InterviewTable
+            rows={rows.filter((r) => r.interviews > 0 || r.trustReceivedScores > 0)}
+            selected={selected}
+            onSelect={setHighlight}
+            column={grouping.column}
+          />
         </>
       )}
     </div>
@@ -299,6 +305,11 @@ function InterviewTable({
       {fmtPct(pct(n, d))}
     </td>
   );
+  const trust = (total: number, n: number, title: string) => (
+    <td className="num" title={n ? `Average of ${n} ${title}${n === 1 ? '' : 's'}` : 'Not asked yet'}>
+      {n ? `${(total / n).toFixed(1)} / 5` : '–'}
+    </td>
+  );
   return (
     <section className="card table-card">
       <div className="card__head lb__iv-head">
@@ -307,9 +318,11 @@ function InterviewTable({
       <p className="muted small lb__iv-note">
         Each AI is interviewed as it's knocked out, and both finalists after the final. Answers are checked against what
         really happened: <strong>owned up</strong> is how often a contestant who lied about their back row admitted it.
+        Everyone also scores how much they trusted each of the others, from 1 (not at all) to 5 (completely), and the
+        finalists say how much they trusted each other in Split or Steal.
       </p>
       <div className="table-scroll">
-        <table className="lb">
+        <table className="lb lb--interviews">
           <thead>
             <tr>
               <th>{column}</th>
@@ -320,7 +333,9 @@ function InterviewTable({
               <th className="num" title="Finalists: meant to steal from the start">Planned to steal</th>
               <th className="num" title="Finalists who had a plan: did what they planned">Stuck to the plan</th>
               <th className="num" title="Finalists: would choose the same again, knowing the other's choice">Same again</th>
-              <th className="num" title="Finalists: trust in the other finalist, 1 (none) to 5 (complete)">Trust</th>
+              <th className="num" title="Average trust they gave the other players over the game, 1 (none) to 5 (complete)">Trusts others</th>
+              <th className="num" title="Average trust the other players gave them over the game, 1 (none) to 5 (complete)">Trusted by others</th>
+              <th className="num" title="Finalists: trust in the other finalist in Split or Steal, 1 (none) to 5 (complete)">Trust in the final</th>
             </tr>
           </thead>
           <tbody>
@@ -336,9 +351,9 @@ function InterviewTable({
                 {cell(r.plannedSteal, r.plansGiven, 'finals')}
                 {cell(r.stuckToPlan, r.planChecks, 'finals with a plan')}
                 {cell(r.sameAgain, r.againAsked, 'finals')}
-                <td className="num" title={r.trustScores ? `Average of ${r.trustScores} score${r.trustScores === 1 ? '' : 's'}` : 'Not asked yet'}>
-                  {r.trustScores ? `${(r.trustTotal / r.trustScores).toFixed(1)} / 5` : '–'}
-                </td>
+                {trust(r.trustGivenTotal, r.trustGivenScores, 'score')}
+                {trust(r.trustReceivedTotal, r.trustReceivedScores, 'score')}
+                {trust(r.trustTotal, r.trustScores, 'final')}
               </tr>
             ))}
           </tbody>

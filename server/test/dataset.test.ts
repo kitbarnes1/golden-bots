@@ -169,6 +169,34 @@ describe('datasetRows', () => {
     });
   });
 
+  it('keeps how much each interviewee trusted the others, and averages it per player', () => {
+    const detail = append(
+      sample(),
+      {
+        type: 'interview',
+        seat: 3,
+        when: 'eliminated',
+        answers: { say: 'Gone.', claimsTrue: true, trustEach: [{ seat: 0, score: 1 }, { seat: 1, score: 4 }, { seat: 2, score: 5 }] },
+      },
+      { type: 'interview', seat: 0, when: 'final', answers: { say: 'Done.', claimsTrue: true, trust: 2, trustEach: [{ seat: 1, score: 2 }, { seat: 3, score: 3 }] } },
+    );
+    const { game, moves } = rows(detail);
+    const [out, finalist] = ofMove(moves, 'interview');
+    expect(out!.interview!.trust_each).toEqual([
+      { seat: 0, model: detail.players[0]!.model, score: 1 },
+      { seat: 1, model: detail.players[1]!.model, score: 4 },
+      { seat: 2, model: detail.players[2]!.model, score: 5 },
+    ]);
+    // Split or Steal trust stays separate from trust over the game.
+    expect(finalist!.interview).toMatchObject({ trust: 2, trust_each: [{ seat: 1, score: 2 }, { seat: 3, score: 3 }] });
+    expect(game.players.map((p) => [p.trust_given, p.trust_received])).toEqual([
+      [2.5, 1],
+      [null, 3],
+      [null, 5],
+      [3.33, 3],
+    ]);
+  });
+
   it('leaves out games with a human, or includes them with the human anonymised', () => {
     const detail = sample();
     const human = { seat: 3, name: 'Kit', kind: 'human' as const };

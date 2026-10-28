@@ -87,6 +87,13 @@ const MIGRATIONS: string[] = [
   ALTER TABLE game_players ADD COLUMN iv_same_again INTEGER;
   ALTER TABLE game_players ADD COLUMN iv_trust INTEGER;
   `,
+  // Trust scores from the exit interviews: what each player gave the others, and what they got.
+  `
+  ALTER TABLE game_players ADD COLUMN trust_given INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN trust_given_n INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN trust_received INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN trust_received_n INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 const bit = (v: boolean | null | undefined) => (v === null || v === undefined ? null : v ? 1 : 0);
@@ -189,7 +196,8 @@ export class Db {
            winnings = ?, claims = ?, truthful_claims = ?, votes_received = ?, invalid_responses = ?,
            llm_calls = ?, cost_usd = ?,
            iv_done = ?, iv_claims_true = ?, iv_lied = ?, iv_saw_coming = ?, iv_called_winner = ?,
-           iv_planned = ?, iv_stuck = ?, iv_same_again = ?, iv_trust = ?
+           iv_planned = ?, iv_stuck = ?, iv_same_again = ?, iv_trust = ?,
+           trust_given = ?, trust_given_n = ?, trust_received = ?, trust_received_n = ?
          WHERE game_id = ? AND seat = ?`,
       );
       for (const s of result.stats) {
@@ -215,6 +223,10 @@ export class Db {
           bit(iv?.stuckToPlan),
           bit(iv?.sameAgain),
           iv?.trust ?? null,
+          s.trustGiven,
+          s.trustGivenCount,
+          s.trustReceived,
+          s.trustReceivedCount,
           gameId,
           s.seat,
         );
@@ -322,7 +334,11 @@ export class Db {
            COUNT(gp.iv_same_again) AS iv_again_asked,
            SUM(gp.iv_same_again) AS iv_again_yes,
            COUNT(gp.iv_trust) AS iv_trust_n,
-           SUM(gp.iv_trust) AS iv_trust_sum
+           SUM(gp.iv_trust) AS iv_trust_sum,
+           SUM(gp.trust_given) AS trust_given,
+           SUM(gp.trust_given_n) AS trust_given_n,
+           SUM(gp.trust_received) AS trust_received,
+           SUM(gp.trust_received_n) AS trust_received_n
          FROM game_players gp JOIN games g ON g.id = gp.game_id
          WHERE ${filter}
          GROUP BY gp.player_key, gp.kind
@@ -386,6 +402,10 @@ export class Db {
           sameAgain: num(r.iv_again_yes),
           trustScores: num(r.iv_trust_n),
           trustTotal: num(r.iv_trust_sum),
+          trustGivenScores: num(r.trust_given_n),
+          trustGivenTotal: num(r.trust_given),
+          trustReceivedScores: num(r.trust_received_n),
+          trustReceivedTotal: num(r.trust_received),
         }),
       ),
       history: history.map(

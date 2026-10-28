@@ -72,7 +72,16 @@ export type ActionRequest =
    * An aside, never part of the game: only AI and mock contestants are asked, and
    * the answers stay out of everyone else's view of the game.
    */
-  | { kind: 'interview'; when: 'eliminated' | 'final'; candidates: number[]; opponent?: number };
+  | {
+      kind: 'interview';
+      when: 'eliminated' | 'final';
+      /** Knocked out: who they can pick as the biggest winner (the players still in). */
+      candidates: number[];
+      /** Finalists: the other finalist. */
+      opponent?: number;
+      /** Everyone else in the game, each to be rated for trust. */
+      others: number[];
+    };
 
 export type SpeakContext = 'tie_plea' | 'tie_discuss' | 'final_reaction';
 
@@ -87,6 +96,12 @@ export const DECISION_POINTS: Record<DecisionPoint, string> = {
   final_chat: 'In the final chat',
   last_moment: 'At the last moment',
 };
+
+/** How much one player trusted another, 1 (not at all) to 5 (completely). */
+export interface TrustRating {
+  seat: number;
+  score: number;
+}
 
 /** Exit interview answers. null (or missing) where a contestant gave no usable answer. */
 export interface InterviewAnswers {
@@ -106,8 +121,10 @@ export interface InterviewAnswers {
   decided?: DecisionPoint | null;
   /** Finalists: why they chose as they did. */
   why?: string;
-  /** Finalists: how much they trusted the other finalist, 1 (not at all) to 5 (completely). */
+  /** Finalists: how much they trusted the other finalist in Split or Steal, 1 (not at all) to 5 (completely). */
   trust?: number | null;
+  /** Everyone: how much they trusted each of the other players over the game, 1 to 5. */
+  trustEach?: TrustRating[] | null;
   /** Finalists: knowing what the other chose, would they choose the same again? */
   sameAgain?: boolean | null;
 }

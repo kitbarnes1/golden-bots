@@ -226,7 +226,7 @@ and if they can't, the tied players draw from the machine and whoever draws a Ki
 | \`target_seat\`, \`target_model\` | For votes and tie-breaks: who they voted to throw out. |
 | \`pick\`, \`ball\` | For Bin or Win: \`bin\` or \`win\`, and the ball it turned out to be. |
 | \`choice\` | For the final: \`split\` or \`steal\`. |
-| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` (the seat they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (1 to 5, in the other finalist) and \`same_again\`. |
+| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` (the seat they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (finalists: 1 to 5, in the other finalist in Split or Steal), \`same_again\`, and \`trust_each\` (everyone: how much they trusted each of the other players over the game, as \`{"seat", "model", "score"}\` with scores 1 to 5). |
 | \`interview_checks\` | Their answers checked against the game: \`lied\` (made a false claim), \`claims_verdict\` (\`truthful\`, \`lied_about_it\`, \`owned_up\` or \`false_confession\`), \`winner_pick_right\`, \`final_choice\` and \`stuck_to_plan\`. |
 | \`fallback\` | The model's reply was unusable, so the game made this move for it (a truthful claim, a pass, or a random vote, pick or final choice). Leave these out when judging a model's decisions. |
 | \`thoughts\` | Private: the note the model wrote about why it made this move. The other players never saw it. |
@@ -239,7 +239,7 @@ and if they can't, the tied players draw from the machine and whoever draws a Ki
 |---|---|
 | \`game_id\`, \`created_at\`, \`finished_at\` | The game, and when it ran (UTC). |
 | \`models\` | The lineup: model id by seat. |
-| \`players\` | Per seat: \`name\`, \`kind\`, \`model\`, \`model_label\`, \`eliminated_stage\`, \`reached_final\`, \`final_choice\`, \`winnings\`, \`claims\` and \`truthful_claims\`, \`votes_received\`, \`fallbacks\` and \`cost_usd\`. |
+| \`players\` | Per seat: \`name\`, \`kind\`, \`model\`, \`model_label\`, \`eliminated_stage\`, \`reached_final\`, \`final_choice\`, \`winnings\`, \`claims\` and \`truthful_claims\`, \`votes_received\`, \`fallbacks\`, \`cost_usd\`, and \`trust_given\` and \`trust_received\` (the average trust, 1 to 5, they gave the others and got from them in the exit interviews; null if none). |
 | \`options\` | The game's settings: chat lengths in seconds, the most messages per chat, whether the models were named after themselves or given show-style names, the reasoning effort asked for, and the seed for the ball machine. |
 | \`jackpot\`, \`outcome\`, \`finalists\` | The final: the jackpot in pounds, \`both_split\`, \`one_steal\` or \`both_steal\`, and the two finalists' seats. |
 | \`has_human\`, \`moves\`, \`cost_usd\` | Whether a person played, how many rows the game has in \`moves.jsonl\`, and what the game cost in model calls. |

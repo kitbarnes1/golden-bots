@@ -42,8 +42,20 @@ export function InterviewAnswers({ event, events, who }: { event: InterviewEvent
     }
     if (a.decided) rows.push(['When did you make up your mind?', DECISION_POINTS[a.decided]]);
     if (a.why) rows.push([`Why ${mine ? mine.toUpperCase() : 'that'}?`, a.why]);
-    if (a.trust != null) rows.push([<>How much did you trust {other ? who(other.seat) : 'the other finalist'}?</>, <Trust score={a.trust} />]);
+    if (a.trust != null) rows.push([<>In Split or Steal, how much did you trust {other ? who(other.seat) : 'the other finalist'}?</>, <Trust score={a.trust} />]);
     if (a.sameAgain != null) rows.push(['Knowing their choice, same again?', yesNo(a.sameAgain)]);
+  }
+  if (a.trustEach?.length) {
+    rows.push([
+      'Over the game, how much did you trust each of the others?',
+      <ul className="iv__trust-list">
+        {a.trustEach.map((t) => (
+          <li key={t.seat}>
+            {who(t.seat)} <Trust score={t.score} />
+          </li>
+        ))}
+      </ul>,
+    ]);
   }
   if (a.claimsTrue != null) {
     // Checked against the back rows turned over after each vote.

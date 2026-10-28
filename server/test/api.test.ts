@@ -102,6 +102,12 @@ describe('API', () => {
     expect(all.rows.reduce((s, r) => s + r.planChecks, 0)).toBeGreaterThan(0);
     // Honest Abe tells the truth in interviews too, so it never "owns up" to a lie it didn't tell.
     expect(honest.ownedUp).toBe(0);
+    // Everyone rated the three others, so 12 trust scores were given and 12 received, with the same total.
+    const sum = (f: (r: LeaderboardResponse['rows'][number]) => number) => all.rows.reduce((s, r) => s + f(r), 0);
+    expect(sum((r) => r.trustGivenScores)).toBe(12);
+    expect(sum((r) => r.trustReceivedScores)).toBe(12);
+    expect(sum((r) => r.trustReceivedTotal)).toBe(sum((r) => r.trustGivenTotal));
+    expect(sum((r) => r.trustGivenTotal)).toBeGreaterThanOrEqual(12);
   });
 
   it('rejects bad lineups and AI seats without an API key', async () => {

@@ -34,6 +34,10 @@ export interface DatasetPlayer {
   /** Moves the game made for them after an unusable reply (or, for a human, when time ran out). */
   fallbacks: number;
   cost_usd: number;
+  /** Average trust (1 to 5) they gave the others in their exit interview; null if they gave none. */
+  trust_given: number | null;
+  /** Average trust the others gave them in theirs; null if nobody rated them. */
+  trust_received: number | null;
 }
 
 export interface GameRow {
@@ -62,6 +66,14 @@ export interface GameRow {
 
 export type MoveKind = 'claim' | 'chat' | 'pass' | 'speak' | 'vote' | 'tie_decide' | 'pick' | 'final_choice' | 'interview';
 
+/** How much an interviewee trusted one of the other players over the game, 1 to 5. */
+export interface DatasetTrust {
+  seat: number;
+  /** null for a human. */
+  model: string | null;
+  score: number;
+}
+
 /** Exit interview answers (what they said to the audience is the row's `say`). */
 export interface DatasetInterview {
   when: 'eliminated' | 'final';
@@ -72,8 +84,11 @@ export interface DatasetInterview {
   planned: FinalChoice | 'undecided' | null;
   decided: DecisionPoint | null;
   why: string | null;
+  /** Finalists: trust in the other finalist in Split or Steal, 1 to 5. */
   trust: number | null;
   same_again: boolean | null;
+  /** Everyone: how much they trusted each of the other players over the game. */
+  trust_each: DatasetTrust[] | null;
 }
 
 /** An exit interview checked against what actually happened. */
@@ -175,6 +190,7 @@ export const MOVE_FEATURES: Record<keyof MoveRow, Feature> = {
     why: 'string',
     trust: 'int64',
     same_again: 'bool',
+    trust_each: { list: { seat: 'int64', model: 'string', score: 'int64' } satisfies Record<keyof DatasetTrust, Feature> },
   } satisfies Record<keyof DatasetInterview, Feature>,
   interview_checks: {
     lied: 'bool',
@@ -213,6 +229,8 @@ export const GAME_FEATURES: Record<keyof GameRow, Feature> = {
       votes_received: 'int64',
       fallbacks: 'int64',
       cost_usd: 'float64',
+      trust_given: 'float64',
+      trust_received: 'float64',
     } satisfies Record<keyof DatasetPlayer, Feature>,
   },
   options: {
@@ -441,6 +459,7 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
             why: text(a.why),
             trust: a.trust ?? null,
             same_again: a.sameAgain ?? null,
+            trust_each: a.trustEach?.map((t) => ({ seat: t.seat, model: who(t.seat).model, score: t.score })) ?? null,
           },
           interview_checks: checkInterview(e, events, reveal, payout, topWinnings),
         });
@@ -452,6 +471,9 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
   }
 
   const count = (seat: number, test: (m: MoveRow) => boolean) => moves.filter((m) => m.seat === seat && test(m)).length;
+  // Trust scores from the interviews: [rater, rated, score].
+  const ratings = events.flatMap((e) => (e.type === 'interview' ? (e.answers.trustEach ?? []).map((t) => [e.seat, t.seat, t.score] as const) : []));
+  const average = (scores: number[]) => (scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : null);
   const votesAgainst = (seat: number) => moves.filter((m) => (m.move === 'vote' || m.move === 'tie_decide') && m.target_seat === seat).length;
   const game: GameRow = {
     game_id: detail.id,
@@ -469,6 +491,8 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
       votes_received: votesAgainst(s.seat),
       fallbacks: count(s.seat, (m) => m.fallback),
       cost_usd: s.costUsd,
+      trust_given: average(ratings.filter(([from]) => from === s.seat).map(([, , score]) => score)),
+      trust_received: average(ratings.filter(([, to]) => to === s.seat).map(([, , score]) => score)),
     })),
     options: {
       chat_seconds: detail.options.chatSeconds,
