@@ -73,6 +73,43 @@ describe('response parsing', () => {
     });
   });
 
+  it('reads the private ratings with a vote, by name, and makes unusable ones null', () => {
+    const voteReq: ActionRequest = { kind: 'vote', stage: 'r1', candidates: [1, 2, 3] };
+    const read = (json: Record<string, unknown>) => validateResponse(voteReq, interpret(voteReq, { vote_for: 'GPT-5', ...json }, players, 0));
+    expect(
+      read({ ratings: { 'GPT-5': { believe: false, trust: 2 }, gemini: { believe: 'yes', trust: '4' }, Kit: 'high', Nobody: { trust: 5 } } }),
+    ).toEqual({
+      ok: true,
+      value: {
+        kind: 'vote',
+        target: 1,
+        ratings: [
+          { seat: 1, believes: false, trust: 2 },
+          { seat: 2, believes: true, trust: 4 },
+          { seat: 3, believes: null, trust: null },
+        ],
+      },
+    });
+    // A list with names works too, and a bare number is a trust score.
+    expect(read({ ratings: [{ name: 'Kit', believes_claim: true }, { player: 'GPT-5', trust: 3.4 }] })).toMatchObject({
+      value: { ratings: [{ seat: 1, believes: null, trust: 3 }, { seat: 2, believes: null, trust: null }, { seat: 3, believes: true, trust: null }] },
+    });
+    expect(read({ ratings: { Kit: 1 } })).toMatchObject({ value: { ratings: [{ seat: 1, trust: null }, { seat: 2, trust: null }, { seat: 3, trust: 1 }] } });
+    // Nothing usable, or nothing at all: the vote stands, with no ratings.
+    for (const ratings of [undefined, 'all fine', { 'GPT-5': { believe: 'perhaps', trust: 'very' } }, { Claude: 5 }]) {
+      expect(read({ ratings })).toEqual({ ok: true, value: { kind: 'vote', target: 1 } });
+    }
+    // But a vote for nobody is still no vote.
+    expect(validateResponse(voteReq, interpret(voteReq, { vote_for: 'Nobody', ratings: { 'GPT-5': 3 } }, players, 0)).ok).toBe(false);
+  });
+
+  it('asks a voter to rate each candidate, by name', () => {
+    const vote = userPrompt({ kind: 'vote', stage: 'r1', candidates: [1, 2, 3] }, ctx);
+    for (const n of ['GPT-5', 'Gemini 2.5 Pro', 'Kit']) expect(vote).toContain(`"${n}": {"believe": true or false, "trust": 1 to 5}`);
+    // Not for a tie-break.
+    expect(userPrompt({ kind: 'tie_decide', stage: 'r1', candidates: [1, 2] }, ctx)).not.toContain('"ratings"');
+  });
+
   // The LLM agent checks its own reply and the engine checks it again, so a checked
   // response has to pass a second time unchanged. Interviews once didn't, and every AI
   // interview was quietly dropped.
@@ -82,6 +119,7 @@ describe('response parsing', () => {
       [{ kind: 'speak', stage: 'final', context: 'final_reaction', prompt: 'Any last words?' }, { say: 'Hello.' }],
       [{ kind: 'chat', stage: 'r1', secondsLeft: 30, participants: [0, 1, 2] }, { say: 'GPT-5, really?', to: 'GPT-5' }],
       [{ kind: 'vote', stage: 'r1', candidates: [1, 2] }, { vote_for: 'GPT-5' }],
+      [{ kind: 'vote', stage: 'r1', candidates: [1, 2] }, { vote_for: 'GPT-5', ratings: { 'GPT-5': { believe: 'no', trust: '2' } } }],
       [{ kind: 'tie_decide', stage: 'r1', candidates: [1, 2] }, { eliminate: 'Gemini 2.5 Pro' }],
       [{ kind: 'pick', action: 'win', available: [0, 4, 7] }, { ball: 5, say: 'Five.' }],
       [{ kind: 'final_choice' }, { choice: 'split' }],
@@ -143,6 +181,14 @@ describe('LlmAgent', () => {
     expect(result.usage?.costUsd).toBeCloseTo(0.001);
     expect(calls[0]!.reasoningEffort).toBe('low');
     expect(calls[0]!.messages[0]!.content).toContain('Golden Bots');
+  });
+
+  it("doesn't ask again over unusable ratings: the vote stands without them", async () => {
+    const { client, calls } = fakeClient(['{"thoughts": "Hmm", "vote_for": "GPT-5", "ratings": {"GPT-5": "sketchy"}}']);
+    const agent = new LlmAgent(client, 'anthropic/claude-sonnet-4.5', { reasoningEffort: 'none', maxTokens: 1000, repairAttempts: 1 });
+    const result = await agent.act({ kind: 'vote', stage: 'r1', candidates: [1, 2, 3] }, ctx, meta);
+    expect(result.response).toEqual({ kind: 'vote', target: 1 });
+    expect(calls).toHaveLength(1);
   });
 
   it('asks again after an unusable reply, then gives up with usage attached', async () => {

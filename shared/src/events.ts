@@ -10,6 +10,7 @@ import type {
   Payout,
   PlayerInfo,
   Stage,
+  VoteRating,
 } from './types.js';
 
 /** 'public' = everyone; otherwise only the listed seats (plus omniscient spectators). */
@@ -58,6 +59,8 @@ export type GameEventBody =
       reasoning?: string;
       usage?: Usage;
     }
+  /** Private: with their vote, an AI says whether it believes each other player's claim, and how far it trusts them. */
+  | { type: 'trust'; stage: 'r1' | 'r2'; seat: number; ratings: VoteRating[] }
   | { type: 'vote_cast'; stage: 'r1' | 'r2'; seat: number }
   /** One vote read out, as on the show: `index` of `total`, with a pause before each. `votes_revealed` follows the last. */
   | { type: 'vote_revealed'; stage: 'r1' | 'r2'; seat: number; target: number; index: number; total: number }

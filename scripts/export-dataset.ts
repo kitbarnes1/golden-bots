@@ -107,6 +107,9 @@ function datasetCard(games: GameRow[], moves: MoveRow[]): string {
   const humans = games.filter((g) => g.has_human).length;
   const withThoughts = moves.filter((m) => m.kind === 'ai' && m.thoughts).length;
   const aiMoves = moves.filter((m) => m.kind === 'ai').length;
+  const voteRatings = moves.reduce((n, m) => n + (m.ratings?.length ?? 0), 0);
+  const ratedGames = new Set(moves.filter((m) => m.ratings).map((m) => m.game_id));
+  const ratedSince = games.filter((g) => ratedGames.has(g.game_id)).map((g) => g.created_at.slice(0, 10)).sort()[0];
 
   return `---
 license: ${LICENSE}
@@ -165,6 +168,7 @@ it worked, and what they were thinking at the time.
 | Back-row claims | ${claims.length}, of which ${lies} (${pct(lies, claims.length)}) were false |
 | Finals | ${outcomes('both_split')} both split, ${outcomes('one_steal')} one stole, ${outcomes('both_steal')} both stole |
 | Exit interviews | ${interviews} |
+| Private ratings at votes | ${voteRatings}, from ${ratedGames.size} games (one AI on one player still in: did it believe their claim, and how far did it trust them?) |
 | Played | ${dates.length ? `${dates[0]} to ${dates[dates.length - 1]}` : 'n/a'} |
 | Games with a human player | ${humans ? `${humans} (the human is shown as "Human")` : 'none (left out)'} |
 | Exported | ${new Date().toISOString().slice(0, 10)} |
@@ -209,10 +213,22 @@ votes.assign(at_liar=votes.target_truthful == False).groupby("model").at_liar.me
 # Do they own up afterwards? Their interview answer, checked against their claims.
 interviews.interview_checks.str.get("claims_verdict").value_counts()
 
+# What do they make of each other at the vote? Each AI's private rating of every player still in:
+# did it believe their claim, and how far did it trust them (1 to 5), next to whether the claim was true.
+said = votes.explode("ratings").dropna(subset=["ratings"])
+said = said.assign(rated_model=said.ratings.str.get("model"), believed=said.ratings.str.get("believed"),
+                   trust=said.ratings.str.get("trust").astype(float), truthful=said.ratings.str.get("truthful"))
+said.pivot_table(index="model", columns="rated_model", values="trust", aggfunc="mean")  # trust, rater by rated
+said.groupby("truthful").trust.mean()  # are liars trusted less?
+seen = said.dropna(subset=["believed", "truthful"])
+seen.assign(right=seen.believed == seen.truthful).groupby("model").right.mean()  # who sees through a claim
+
 # Who trusts whom? Each interviewee's trust (1 to 5) in every other player over the game, model by model.
 rated = interviews.assign(rated=interviews.interview.str.get("trust_each")).explode("rated").dropna(subset=["rated"])
-rated.assign(rated_model=rated.rated.str.get("model"), score=rated.rated.str.get("score").astype(float)).pivot_table(
-    index="model", columns="rated_model", values="score", aggfunc="mean")
+rated = rated.assign(rated_model=rated.rated.str.get("model"), score=rated.rated.str.get("score").astype(float),
+                     truthful=rated.rated.str.get("truthful"))
+rated.pivot_table(index="model", columns="rated_model", values="score", aggfunc="mean")
+rated.groupby("truthful").score.mean()  # do the liars end up trusted less?
 
 # In Split or Steal: a finalist's trust in the other (1 to 5), and what the other then did.
 finals = interviews[interviews.opponent_model.notna()]
@@ -264,10 +280,11 @@ and if they can't, the tied players draw from the machine and whoever draws a Ki
 | \`voted_out\`, \`votes_against\` | For claims: whether they went out that round (tie-breaks included), and how many votes they got in its vote. |
 | \`target_seat\`, \`target_model\` | For votes and tie-breaks: who they voted to throw out. |
 | \`target_truthful\`, \`target_out\` | For votes and tie-breaks: whether the target's claim that round was true (nobody knew until after the vote), and whether the target went out. |
+| \`ratings\` | For votes: what the voter privately made of each other player still in, one item each. \`seat\` and \`model\` are who it rated; \`believed\` is whether it believed that player's back-row claim; \`trust\` is 1 (not at all) to 5 (completely); and \`truthful\` is whether that claim was really true (nobody knew at the vote). For example, \`[{"seat": 2, "model": "x-ai/grok-4.7", "believed": true, "trust": 4, "truthful": false}, ...]\` is a vote that believed, and fairly trusted, a liar. Any part a model didn't answer is null; the whole list is null if it gave none, for a human (who isn't asked), for tie-breaks, and in older games. |
 | \`pick\`, \`ball\` | For Bin or Win: \`bin\` or \`win\`, and the ball it turned out to be. |
 | \`choice\` | For the final: \`split\` or \`steal\`. |
 | \`opponent_seat\`, \`opponent_model\`, \`opponent_choice\` | For final choices and the finalists' interviews: the other finalist, and what they chose. |
-| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` and \`winner_pick_model\` (who they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (finalists: 1 to 5, in the other finalist in Split or Steal), \`same_again\`, and \`trust_each\` (everyone: how much they trusted each of the other players over the game, as \`{"seat", "model", "score"}\` with scores 1 to 5). |
+| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` and \`winner_pick_model\` (who they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (finalists: 1 to 5, in the other finalist in Split or Steal), \`same_again\`, and \`trust_each\` (everyone: how much they trusted each of the other players over the game, as \`{"seat", "model", "score", "truthful"}\` with scores 1 to 5, and \`truthful\` whether everything that player claimed, in the rounds the interviewee played, was true). |
 | \`interview_checks\` | Their answers checked against the game: \`lied\` (made a false claim), \`claims_verdict\` (\`truthful\`, \`lied_about_it\`, \`owned_up\` or \`false_confession\`), \`winner_pick_right\`, \`final_choice\` and \`stuck_to_plan\`. |
 | \`fallback\` | The model's reply was unusable, so the game made this move for it (a truthful claim, a pass, or a random vote, pick or final choice). Leave these out when judging a model's decisions. |
 | \`thoughts\` | Private: the note the model wrote about why it made this move, or, for an interview, what it was thinking as it answered. The other players never saw it. |
@@ -321,8 +338,9 @@ Games with scripted test bots are left out too. Nothing from the site's admin si
   games have none, and the thinking behind the answers is only kept from late October 2026.
 - **Reported trust is new, and it's only what they say.** From 28 October 2026, every interviewee
   rates how much they trusted each of the other players (\`trust_each\`), and the finalists also
-  rate each other in Split or Steal (\`trust\`). Earlier games only have the finalists' score. Trust
-  also shows in who votes for whom, who believes which claims, and what the finalists do with a deal.
+  rate each other in Split or Steal (\`trust\`). Earlier games only have the finalists' score. The
+  private ratings with each vote (\`ratings\`) ${ratedSince ? `start on ${ratedSince}` : "are newer still: no game here has them yet"}. Trust
+  also shows in who votes for whom, and what the finalists do with a deal.
 - **Using the text.** It was written by the models listed. If you plan to train a model on it,
   check each model provider's terms.
 

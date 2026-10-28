@@ -90,7 +90,10 @@ export function interpret(
       return { say: json.say, pass: json.pass === true, to: resolvePlayer(json.to, others, players) ?? null };
     }
     case 'vote':
-      return { target: resolvePlayer(json.vote_for ?? json.vote ?? json.target, request.candidates, players) };
+      return {
+        target: resolvePlayer(json.vote_for ?? json.vote ?? json.target, request.candidates, players),
+        ratings: voteRatingsByName(json.ratings, request.candidates, players),
+      };
     case 'tie_decide':
       return { target: resolvePlayer(json.eliminate ?? json.vote_for ?? json.target, request.candidates, players) };
     case 'pick': {
@@ -129,6 +132,27 @@ function trustByName(value: unknown, others: number[], players: PlayerInfo[]): {
       })
     : Object.entries(value);
   return pairs.map(([who, score]) => ({ seat: resolvePlayer(who, others, players), score }));
+}
+
+/**
+ * The ratings given with a vote, matched to seats: keyed by name
+ * ({"GPT-5": {"believe": true, "trust": 4}}, or just {"GPT-5": 4}), or a list
+ * with a name in each. The values are left for the check to read.
+ */
+function voteRatingsByName(value: unknown, candidates: number[], players: PlayerInfo[]): Record<string, unknown>[] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const entries: [unknown, unknown][] = Array.isArray(value)
+    ? value.map((v) => [isObject(v) ? (v.name ?? v.player) : undefined, v])
+    : Object.entries(value);
+  const ratings: Record<string, unknown>[] = [];
+  for (const [who, v] of entries) {
+    const seat = resolvePlayer(who, candidates, players);
+    if (seat === undefined || ratings.some((r) => r.seat === seat)) continue;
+    const r = isObject(v) ? v : { trust: v };
+    ratings.push({ seat, believes: r.believe ?? r.believes ?? r.believes_claim, trust: r.trust ?? r.score });
+  }
+  return ratings;
 }
 
 /** Match a name (or seat number) given by a model to one of the candidate seats. */

@@ -4,13 +4,15 @@ import {
   formatMoney,
   pairThoughts,
   type Ball as BallT,
+  type ClaimValue,
   type GameEvent,
   type PlayerInfo,
   type ThoughtEvent,
+  type VoteRating,
 } from '@gb/shared';
 import { SEAT_COLORS } from '../lib/gameState';
 import { Ball } from './Ball';
-import { InterviewAnswers } from './Interview';
+import { InterviewAnswers, Trust } from './Interview';
 import { PlayerCard } from './PlayerCard';
 
 interface Props {
@@ -70,11 +72,28 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
   const thoughtFor = (key: string | number) => (showThoughts ? paired.byMove.get(String(key)) : undefined);
 
   const backRows = new Map<string, BallT[]>();
+  const claims = new Map<string, ClaimValue[]>();
+  /** What each AI privately made of the others when it voted, by "<stage>:<seat>". */
+  const ratings = new Map<string, VoteRating[]>();
   const readOut = new Set<string>();
   for (const e of events) {
     if (e.type === 'back_row') backRows.set(`${e.stage}:${e.seat}`, e.back);
+    if (e.type === 'claim') claims.set(`${e.stage}:${e.seat}`, e.claim);
+    if (e.type === 'trust') ratings.set(`${e.stage}:${e.seat}`, e.ratings);
     if (e.type === 'vote_revealed') readOut.add(e.stage);
   }
+  /** A vote's private ratings, shown with its thinking (and only once the vote is read out). */
+  const rated = (stage: 'r1' | 'r2', seat: number) => {
+    const list = showThoughts ? ratings.get(`${stage}:${seat}`) : undefined;
+    if (!list) return null;
+    // Whether each claim was true, for anyone who can see the back rows.
+    const truth = (s: number) => {
+      const back = backRows.get(`${stage}:${s}`);
+      const claim = claims.get(`${stage}:${s}`);
+      return reveal && back && claim ? claimIsTruthful(claim, back) : null;
+    };
+    return <VoteRatings ratings={list} who={who} truth={truth} />;
+  };
 
   const name = (seat: number) => players[seat]?.name ?? `Player ${seat + 1}`;
   const color = (seat: number) => ({ '--seat': SEAT_COLORS[seat % SEAT_COLORS.length] }) as CSSProperties;
@@ -235,6 +254,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
               {who(e.seat)} votes for {who(e.target)}
             </div>
             {mind(thoughtFor(key))}
+            {rated(e.stage, e.seat)}
           </div>,
         );
         break;
@@ -267,6 +287,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
                   {who(v.seat)} voted for {who(v.target)}
                 </div>
                 {mind(thoughtFor(`${key}:${v.seat}`))}
+                {rated(e.stage, v.seat)}
               </div>
             ))}
           </div>,
@@ -505,6 +526,30 @@ export function MoveThought({ event }: { event: ThoughtEvent }) {
         <Usage event={event} />
       </div>
       <ThoughtBody event={event} />
+    </div>
+  );
+}
+
+/** How a voter privately rated the others: do they believe each claim, and how far do they trust them? */
+function VoteRatings({ ratings, who, truth }: { ratings: VoteRating[]; who: (seat: number) => ReactNode; truth: (seat: number) => boolean | null }) {
+  return (
+    <div className="feed__mind">
+      <div className="feed__mind-head">
+        <span aria-hidden>🔒</span> <span>Privately</span>
+      </div>
+      <ul className="feed__ratings">
+        {ratings.map((r) => {
+          const truthful = truth(r.seat);
+          return (
+            <li key={r.seat}>
+              {who(r.seat)}
+              {truthful !== null && <span className={`badge ${truthful ? 'badge--truth' : 'badge--lie'}`}>{truthful ? 'True' : 'Lie'}</span>}
+              <span className="feed__muted">{r.believes === true ? 'believes them' : r.believes === false ? 'doubts them' : ''}</span>
+              {r.trust !== null && <Trust score={r.trust} />}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

@@ -210,9 +210,9 @@ describe('datasetRows', () => {
     const { game, moves } = rows(detail);
     const [out, finalist] = ofMove(moves, 'interview');
     expect(out!.interview!.trust_each).toEqual([
-      { seat: 0, model: detail.players[0]!.model, score: 1 },
-      { seat: 1, model: detail.players[1]!.model, score: 4 },
-      { seat: 2, model: detail.players[2]!.model, score: 5 },
+      { seat: 0, model: detail.players[0]!.model, score: 1, truthful: false },
+      { seat: 1, model: detail.players[1]!.model, score: 4, truthful: false },
+      { seat: 2, model: detail.players[2]!.model, score: 5, truthful: false },
     ]);
     // Split or Steal trust stays separate from trust over the game.
     expect(finalist!.interview).toMatchObject({ trust: 2, trust_each: [{ seat: 1, score: 2 }, { seat: 3, score: 3 }] });
@@ -288,6 +288,48 @@ describe('a real game with exit interviews and a tie-break', () => {
     });
   });
 
+  it('puts each private rating next to whether that player’s claims were really true', () => {
+    const d = append(
+      detail(),
+      // With its round 1 vote, seat 1 believed seat 0, doubted seat 3, and said nothing usable about seat 2.
+      { type: 'trust', stage: 'r1', seat: 1, ratings: [{ seat: 0, believes: true, trust: 4 }, { seat: 2, believes: null, trust: null }, { seat: 3, believes: false, trust: 1 }] },
+      // In round 2 seat 0 told the truth and seat 2 lied; seat 1 believed them both.
+      { type: 'trust', stage: 'r2', seat: 1, ratings: [{ seat: 0, believes: true, trust: 4 }, { seat: 2, believes: true, trust: 3 }] },
+    );
+    // Everyone lied in round 1 of this game; say seat 0 hadn't.
+    const r1 = d.events.find((e): e is Extract<GameEvent, { type: 'back_rows_revealed' }> => e.type === 'back_rows_revealed' && e.stage === 'r1')!;
+    r1.rows.find((r) => r.seat === 0)!.truthful = true;
+    // And the two knocked out rated everyone else over the game.
+    for (const e of d.events) {
+      if (e.type === 'interview' && e.when === 'eliminated') e.answers.trustEach = [0, 1, 2, 3].filter((s) => s !== e.seat).map((seat) => ({ seat, score: 3 }));
+    }
+
+    const { moves } = rows(d);
+    const votes = ofMove(moves, 'vote');
+    expect(votes.find((v) => v.stage === 'r1' && v.seat === 1)!.ratings).toEqual([
+      { seat: 0, model: 'nvidia/nemotron-3.5-super-vl:free', believed: true, trust: 4, truthful: true },
+      { seat: 2, model: 'dots-studio/dots-3-note-preview:free', believed: null, trust: null, truthful: false },
+      { seat: 3, model: 'nvidia/nemotron-3-ultra-550b-a55b:free', believed: false, trust: 1, truthful: false },
+    ]);
+    expect(votes.find((v) => v.stage === 'r2' && v.seat === 1)!.ratings).toEqual([
+      { seat: 0, model: 'nvidia/nemotron-3.5-super-vl:free', believed: true, trust: 4, truthful: true },
+      { seat: 2, model: 'dots-studio/dots-3-note-preview:free', believed: true, trust: 3, truthful: false },
+    ]);
+    // Each vote keeps its own ratings: the others gave none, and tie-breaks aren't rated.
+    expect(moves.filter((m) => m.ratings).map((m) => [m.move, m.stage, m.seat])).toEqual([
+      ['vote', 'r1', 1],
+      ['vote', 'r2', 1],
+    ]);
+    // Trust over the game sits next to whether everything each player claimed, in the rounds the interviewee played, was true.
+    const out = ofMove(moves, 'interview').filter((i) => i.interview!.when === 'eliminated');
+    expect(out.map((i) => [i.seat, i.interview!.trust_each!.map((t) => [t.seat, t.truthful])])).toEqual([
+      [3, [[0, true], [1, false], [2, false]]], // out in round 1: seat 0 had told the truth so far
+      [2, [[0, true], [1, false], [3, false]]], // out in round 2: and again
+    ]);
+    // Games from before the ratings have none.
+    expect(rows(sample()).moves.every((m) => m.ratings === null)).toBe(true);
+  });
+
   it('records the tie-break, and who lied before', () => {
     const { moves } = rows(detail());
     const ties = ofMove(moves, 'tie_decide');
@@ -314,6 +356,8 @@ describe('the dataset card schema', () => {
     expect(Object.keys(MOVE_FEATURES)).toEqual(Object.keys(moves[0]!));
     expect(Object.keys(GAME_FEATURES)).toEqual(Object.keys(game));
     expect(Object.keys((GAME_FEATURES.players as { list: object }).list)).toEqual(Object.keys(game.players[0]!));
+    const rated = rows(append(sample(), { type: 'trust', stage: 'r1', seat: 0, ratings: [{ seat: 1, believes: true, trust: 3 }] })).moves.find((m) => m.ratings)!;
+    expect(Object.keys((MOVE_FEATURES.ratings as { list: object }).list)).toEqual(Object.keys(rated.ratings![0]!));
   });
 
   it('writes the YAML the way Hugging Face does', () => {

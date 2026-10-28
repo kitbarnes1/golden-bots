@@ -273,8 +273,10 @@ or, to stay quiet: {"thoughts": "...", "pass": true}`;
     }
     case 'vote': {
       const names = request.candidates.map((s) => `"${name(p, s)}"`).join(', ');
+      const ratings = request.candidates.map((s) => `"${name(p, s)}": {"believe": true or false, "trust": 1 to 5}`).join(', ');
       return `Secretly vote to eliminate one player. You can't vote for yourself. Choose one of: ${names}.
-Respond with JSON: {"thoughts": "...", "vote_for": "<exact name>"}`;
+Also rate each of them, privately: do you believe their back-row claim, and how much do you trust them (1 = not at all, 5 = completely)?
+Respond with JSON: {"thoughts": "...", "vote_for": "<exact name>", "ratings": {${ratings}}}`;
     }
     case 'tie_decide': {
       const names = request.candidates.map((s) => `"${name(p, s)}"`).join(', ');
