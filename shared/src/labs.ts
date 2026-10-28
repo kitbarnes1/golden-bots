@@ -75,7 +75,11 @@ export type GroupBy = 'model' | 'lab' | 'country' | 'openness' | 'generation';
 export const RECENT_MS = 183 * 24 * 60 * 60_000;
 
 /** Which group a contestant falls in, and what to call it. `after` orders the groups that go at the end: not known, then humans, then bots. */
-function groupOf(row: LeaderboardRow, by: Exclude<GroupBy, 'model'>, now: number): { id: string; label: string; after?: number } {
+function groupOf(
+  row: Pick<LeaderboardRow, 'key' | 'kind' | 'facts'>,
+  by: Exclude<GroupBy, 'model'>,
+  now: number,
+): { id: string; label: string; after?: number } {
   if (row.kind === 'human') return { id: 'humans', label: 'Human players', after: 2 };
   if (row.kind === 'mock') return { id: 'mocks', label: 'Mock bots', after: 3 };
   const f = row.facts ?? modelFacts(row.key);
@@ -97,6 +101,11 @@ function groupOf(row: LeaderboardRow, by: Exclude<GroupBy, 'model'>, now: number
           ? { id: 'recent', label: 'Released in the last 6 months' }
           : { id: 'older', label: 'Older' };
   }
+}
+
+/** The key of the row `groupRows` adds this contestant into (its own key when not grouped). */
+export function groupKey(row: Pick<LeaderboardRow, 'key' | 'kind' | 'facts'>, by: GroupBy, now = Date.now()): string {
+  return by === 'model' ? row.key : `${by}:${groupOf(row, by, now).id}`;
 }
 
 /**
