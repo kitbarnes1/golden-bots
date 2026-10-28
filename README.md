@@ -188,8 +188,10 @@ disappears, the game stops with a clear message rather than carrying on with ran
 
 Each turn, a model gets the rules, the game so far from its own point of view (the public
 transcript, its own back row and its own earlier private notes) and one task: claim, chat, vote,
-pick a ball, or choose split or steal. It replies in JSON with a private `thoughts` field.
-Replies are validated. An unusable reply gets one retry with the error explained, and if that
+pick a ball, or choose split or steal. It replies in JSON with a private `thoughts` field. With a
+vote it also rates every other player still in, privately: does it believe their claim, and how
+much does it trust them? On the way out (or after the final) it answers the host's exit interview,
+which can't change the game. Replies are validated. An unusable reply gets one retry with the error explained, and if that
 fails too the host makes a neutral move for it, which counts as a "fumble" on the leaderboard.
 
 Models are told to leave with as much money as possible, and that bluffing is allowed but up to
@@ -215,11 +217,13 @@ All settings are environment variables (see `.env.example`).
 | `OPENROUTER_API_KEY` | – | Enables AI contestants. Optional: you can paste a key on the **Settings** page instead. When this is set it always wins, and Settings can't change it. |
 | `ADMIN_PASSWORD` | – | Log in with it to start, stop or delete games and to change Settings. **Set this in production**, otherwise anyone can spend your credit or swap your API key. Watching and the leaderboard stay public. Sessions are 30-day HttpOnly cookies; repeated wrong guesses lock logins out for a while. |
 | `PUBLIC_URL` | `http://localhost:3000` | Sent to OpenRouter as the app's referer. |
+| `PORT` / `HOST` | `3000` / `0.0.0.0` | Where the server listens. |
 | `MAX_CONCURRENT_GAMES` | `3` | Games that can run at once. |
 | `FEATURED_MODELS` | automatic | Comma-separated model ids to suggest first in the picker (also used for random lineups and autoplay). |
 | `LLM_MAX_TOKENS` / `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | `4096` / `120000` / `3` | Per-call limits. |
 | `HUMAN_TIMEOUT_MS` | 15 min | How long a human gets per move before autopilot takes over. |
 | `VOTE_REVEAL_MS` | `2500` | Pause before each vote is read out (the last gets half as long again). `0` reads them straight out. |
+| `MOCK_DELAY_MS` | `600` | Roughly how long a mock player "thinks" before each move, so practice games are watchable. `0` plays them instantly. |
 | `AUTOPLAY_INTERVAL_MINUTES` | `0` (off) | Start an all-AI game every N minutes, so the leaderboard fills up by itself. |
 | `AUTOPLAY_MODELS` | featured models | Pool to draw autoplay lineups from. |
 | `DATABASE_PATH` | `./data/golden-balls.db` | SQLite file. `encryption.key` (see below) goes in the same folder. |
@@ -242,7 +246,8 @@ backups, Cloudflare for TLS and DNS, and push-to-deploy from GitHub Actions with
 in GitHub.
 
 To share your games, `npm run export-dataset` turns them into a Hugging Face dataset (claims next to
-the real balls, the private thoughts behind each move, votes and exit interviews), and a workflow
+the real balls, the private thoughts behind each move, votes, who trusted whom, and exit
+interviews), and a workflow
 can publish it with a one-page Space alongside, as the live demo does: here's its
 [dataset](https://huggingface.co/datasets/Kitbarnes/golden-bots) and its
 [Space](https://huggingface.co/spaces/Kitbarnes/golden-bots). [docs/HUGGINGFACE.md](docs/HUGGINGFACE.md)
@@ -271,8 +276,10 @@ from the same log. TypeScript throughout, with tests covering the rules engine a
 Issues and pull requests are welcome. Some directions that would be fun:
 
 - Bring your own key, so visitors can run games on their own OpenRouter credit
-- More statistics: who gets voted out for lying
-- Tournaments: a fixed set of models playing many seeded games for a fairer ranking
+- More statistics: who spots a lie (from the private ratings with each vote), who gets voted out
+  for lying, and winnings per dollar spent
+- A "who trusts whom" grid on the leaderboard, model by model
+- Tournaments: a fixed set of models playing many seeded games for an Elo-style ranking
 
 Found a security problem? Please report it privately, as [SECURITY.md](SECURITY.md) explains,
 rather than in an issue.
