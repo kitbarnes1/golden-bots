@@ -79,6 +79,8 @@ export interface EngineDeps {
   signal?: AbortSignal;
   /** Pause before each vote is read out, for suspense (0 = straight through, as in tests). */
   voteRevealMs?: number;
+  /** Something worth a line in the server log that isn't part of the game, such as a skipped interview. */
+  warn?: (message: string, detail: Record<string, unknown>) => void;
 }
 
 interface SeatState {
@@ -975,11 +977,16 @@ export class GameEngine {
         const result = await s.agent.act(request, this.contextFor(seat), { requestId: randomUUID(), signal: this.signal });
         this.recordUsage(s, result.usage);
         const valid = validateResponse(request, result.response);
-        if (this.over || this.signal.aborted || !valid.ok || valid.value.kind !== 'interview') return;
+        if (this.over || this.signal.aborted) return;
+        if (!valid.ok || valid.value.kind !== 'interview') {
+          this.deps.warn?.('Interview skipped: unusable answer', { seat, when: request.when, error: valid.ok ? 'wrong kind' : valid.error });
+          return;
+        }
         this.answers.set(seat, valid.value.answers);
         this.push({ type: 'interview', seat, when: request.when, answers: valid.value.answers });
       } catch (err) {
         if (err instanceof AgentError) this.recordUsage(s, err.usage);
+        if (!this.signal.aborted) this.deps.warn?.('Interview skipped: the model failed', { seat, when: request.when, error: err instanceof Error ? err.message : String(err) });
       }
     })();
     this.interviews.push(done);

@@ -72,6 +72,34 @@ describe('response parsing', () => {
       value: { kind: 'final_choice', choice: 'steal' },
     });
   });
+
+  // The LLM agent checks its own reply and the engine checks it again, so a checked
+  // response has to pass a second time unchanged. Interviews once didn't, and every AI
+  // interview was quietly dropped.
+  it('passes a checked response again unchanged', () => {
+    const cases: [ActionRequest, Record<string, unknown>][] = [
+      [{ kind: 'claim', stage: 'r1', backCount: 2 }, { claimed_back_row: ['£5k', 'killer'], say: 'Trust me.' }],
+      [{ kind: 'speak', stage: 'final', context: 'final_reaction', prompt: 'Any last words?' }, { say: 'Hello.' }],
+      [{ kind: 'chat', stage: 'r1', secondsLeft: 30, participants: [0, 1, 2] }, { say: 'GPT-5, really?', to: 'GPT-5' }],
+      [{ kind: 'vote', stage: 'r1', candidates: [1, 2] }, { vote_for: 'GPT-5' }],
+      [{ kind: 'tie_decide', stage: 'r1', candidates: [1, 2] }, { eliminate: 'Gemini 2.5 Pro' }],
+      [{ kind: 'pick', action: 'win', available: [0, 4, 7] }, { ball: 5, say: 'Five.' }],
+      [{ kind: 'final_choice' }, { choice: 'split' }],
+      [
+        { kind: 'interview', when: 'eliminated', candidates: [1, 2] },
+        { say: 'Fair enough.', claims_were_true: 'No, I bluffed', saw_it_coming: true, will_win: 'GPT-5', would_do_differently: 'Lie less.' },
+      ],
+      [
+        { kind: 'interview', when: 'final', candidates: [], opponent: 1 },
+        { say: 'Done.', claims_were_true: true, planned_at_start: 'Steal', decided_when: 'round 2', why: 'Money.', trust: '4', same_again: 'yes' },
+      ],
+    ];
+    for (const [request, json] of cases) {
+      const once = validateResponse(request, interpret(request, json, players, 0));
+      expect(once.ok, request.kind).toBe(true);
+      if (once.ok) expect(validateResponse(request, once.value), request.kind).toEqual(once);
+    }
+  });
 });
 
 describe('LlmAgent', () => {

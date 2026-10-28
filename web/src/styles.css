@@ -78,6 +78,11 @@ main {
   margin: 0 auto;
   padding: 24px 16px 48px;
 }
+/* The game and the leaderboard have the most to show, so they use more of a wide screen. */
+.page.game,
+.page.leaderboard {
+  max-width: 1760px;
+}
 
 .muted {
   color: var(--muted);
@@ -1198,7 +1203,7 @@ textarea {
 /* Transcript. --fill-top is where it starts on screen (GamePage keeps it up to date), so it ends just above the bottom. */
 .feed {
   height: calc(100vh - var(--fill-top, 94px) - 16px);
-  min-height: 420px;
+  min-height: 240px;
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid var(--line);

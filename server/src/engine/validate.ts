@@ -93,19 +93,22 @@ export function validateResponse(request: ActionRequest, raw: unknown): Validati
       return { ok: true, value: { kind: 'final_choice', choice } };
     }
     case 'interview': {
-      const answers: InterviewAnswers = { say: cleanSay(r.say), claimsTrue: yesNo(r.claimsTrue) };
+      // An answer that has already been checked once (the LLM agent checks its own) keeps its
+      // fields under `answers`, and must pass again as it is.
+      const a = r.kind === 'interview' && r.answers && typeof r.answers === 'object' ? (r.answers as Record<string, unknown>) : r;
+      const answers: InterviewAnswers = { say: cleanSay(a.say), claimsTrue: yesNo(a.claimsTrue) };
       if (request.when === 'eliminated') {
-        answers.sawItComing = yesNo(r.sawItComing);
-        answers.winnerPick = typeof r.winnerPick === 'number' && request.candidates.includes(r.winnerPick) ? r.winnerPick : null;
-        answers.differently = cleanSay(r.differently);
+        answers.sawItComing = yesNo(a.sawItComing);
+        answers.winnerPick = typeof a.winnerPick === 'number' && request.candidates.includes(a.winnerPick) ? a.winnerPick : null;
+        answers.differently = cleanSay(a.differently);
       } else {
-        const planned = typeof r.planned === 'string' ? r.planned.trim().toLowerCase() : '';
+        const planned = typeof a.planned === 'string' ? a.planned.trim().toLowerCase() : '';
         answers.planned = planned === 'split' || planned === 'steal' || planned === 'undecided' ? planned : null;
-        answers.decided = decisionPoint(r.decided);
-        answers.why = cleanSay(r.why);
-        const trust = typeof r.trust === 'string' ? Number(r.trust) : r.trust;
+        answers.decided = decisionPoint(a.decided);
+        answers.why = cleanSay(a.why);
+        const trust = typeof a.trust === 'string' ? Number(a.trust) : a.trust;
         answers.trust = typeof trust === 'number' && Number.isFinite(trust) ? Math.min(5, Math.max(1, Math.round(trust))) : null;
-        answers.sameAgain = yesNo(r.sameAgain);
+        answers.sameAgain = yesNo(a.sameAgain);
       }
       const answered = Object.values(answers).some((v) => v !== null && v !== '');
       if (!answered) return fail('Answer at least one of the questions.');
