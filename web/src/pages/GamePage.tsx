@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { formatMoney, type GameEvent } from '@gb/shared';
+import type { GameEvent } from '@gb/shared';
 import { ActionPanel } from '../components/ActionPanel';
 import { BinOrWinBoard } from '../components/BinOrWinBoard';
+import { ExitInterviews, finishingOrder, outcome } from '../components/ExitInterviews';
 import { Feed } from '../components/Feed';
 import { FinalStage } from '../components/FinalStage';
-import { InterviewAnswers } from '../components/Interview';
 import { ChatBox, FloorBanner } from '../components/OpenFloor';
 import { Podium } from '../components/Podium';
 import { RoundsReview } from '../components/RoundsReview';
@@ -13,7 +13,7 @@ import { TableStrip } from '../components/TableStrip';
 import { VoteTally } from '../components/VoteTally';
 import { api, ApiError, prefs } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { buildView, SEAT_COLORS, STAGE_LABELS, type SeatView } from '../lib/gameState';
+import { buildView, STAGE_LABELS } from '../lib/gameState';
 import { useGame } from '../lib/useGame';
 
 /** Events that don't change anything on screen, so replays skip straight past them. */
@@ -48,7 +48,7 @@ export function GamePage() {
   const [speed, setSpeed] = useState(1);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'stage' | 'rounds'>('stage');
+  const [tab, setTab] = useState<'stage' | 'rounds' | 'interviews'>('stage');
 
   const shown = useMemo(() => (cursor === null ? events : events.slice(0, cursor)), [events, cursor]);
   const view = useMemo(() => buildView(shown), [shown]);
@@ -123,6 +123,9 @@ export function GamePage() {
 
   const viewer = detail.viewer;
   const live = game.status === 'running';
+  const interviewCount = shown.filter((e) => e.type === 'interview').length;
+  // The Interviews tab goes away if there's nothing in it (say, a replay starting again).
+  const activeTab = tab === 'interviews' && interviewCount === 0 ? 'stage' : tab;
   const replaying = cursor !== null;
   const mySeat = viewer.seat;
   const myAwaiting = !replaying && view.awaiting && view.awaiting.seat === mySeat ? view.awaiting : undefined;
@@ -250,12 +253,17 @@ export function GamePage() {
       <div className="game__layout">
         <div className="game__stage">
           <div className="tabs" role="tablist" aria-label="Game view">
-            <button type="button" role="tab" className="tabs__tab" aria-selected={tab === 'stage'} onClick={() => setTab('stage')}>
+            <button type="button" role="tab" className="tabs__tab" aria-selected={activeTab === 'stage'} onClick={() => setTab('stage')}>
               {live ? 'Live' : 'Stage'}
             </button>
-            <button type="button" role="tab" className="tabs__tab" aria-selected={tab === 'rounds'} onClick={() => setTab('rounds')}>
+            <button type="button" role="tab" className="tabs__tab" aria-selected={activeTab === 'rounds'} onClick={() => setTab('rounds')}>
               Rounds
             </button>
+            {interviewCount > 0 && (
+              <button type="button" role="tab" className="tabs__tab" aria-selected={activeTab === 'interviews'} onClick={() => setTab('interviews')}>
+                Interviews <span className="tabs__count">{interviewCount}</span>
+              </button>
+            )}
           </div>
           {view.floor && (
             <FloorBanner
@@ -265,7 +273,7 @@ export function GamePage() {
               {...(view.pause ? { stoppedAt: view.pause.since } : {})}
             />
           )}
-          {tab === 'rounds' && (
+          {activeTab === 'rounds' && (
             <RoundsReview
               events={shown}
               players={view.players}
@@ -273,10 +281,10 @@ export function GamePage() {
               {...(mySeat !== undefined ? { viewerSeat: mySeat } : {})}
             />
           )}
-          {tab === 'stage' && (view.stage === 'r1' || view.stage === 'r2') && view.voteReading && (
+          {activeTab === 'stage' && (view.stage === 'r1' || view.stage === 'r2') && view.voteReading && (
             <VoteTally reading={view.voteReading} seats={view.seats} />
           )}
-          {tab === 'stage' && (view.stage === 'intro' || view.stage === 'r1' || view.stage === 'r2') && (
+          {activeTab === 'stage' && (view.stage === 'intro' || view.stage === 'r1' || view.stage === 'r2') && (
             <div className="podiums">
               {view.seats.map((s) => (
                 <Podium
@@ -291,7 +299,7 @@ export function GamePage() {
             </div>
           )}
 
-          {tab === 'stage' && view.stage === 'bow' && view.board && (
+          {activeTab === 'stage' && view.stage === 'bow' && view.board && (
             <BinOrWinBoard
               board={view.board}
               seats={view.seats}
@@ -307,7 +315,7 @@ export function GamePage() {
             />
           )}
 
-          {tab === 'stage' && (view.stage === 'final' || view.stage === 'over') && view.final && (
+          {activeTab === 'stage' && (view.stage === 'final' || view.stage === 'over') && view.final && (
             <FinalStage
               final={view.final}
               seats={view.seats}
@@ -318,7 +326,8 @@ export function GamePage() {
             />
           )}
 
-          {tab === 'stage' && view.stage === 'over' && <Summary view={view} events={shown} />}
+          {activeTab === 'interviews' && <ExitInterviews view={view} events={shown} />}
+          {activeTab === 'stage' && view.stage === 'over' && <Summary view={view} interviews={interviewCount} onInterviews={() => setTab('interviews')} />}
           {view.error && <p className="error">The game stopped: {view.error}</p>}
 
           {myAwaiting && (
@@ -387,55 +396,29 @@ export function GamePage() {
   );
 }
 
-const outcome = (s: SeatView) =>
-  s.eliminatedStage
-    ? `eliminated in round ${s.eliminatedStage === 'r1' ? 1 : 2}`
-    : `chose ${s.finalChoice?.toUpperCase()} and won ${formatMoney(s.winnings ?? 0)}`;
-
-function Summary({ view, events }: { view: ReturnType<typeof buildView>; events: GameEvent[] }) {
-  const ranked = [...view.seats].sort((a, b) => (b.winnings ?? -1) - (a.winnings ?? -1));
-  const interviews = new Map(events.flatMap((e) => (e.type === 'interview' ? [[e.seat, e] as const] : [])));
-  const ais = ranked.filter((s) => s.info.kind !== 'human');
-  const who = (seat: number) => <strong>{view.players[seat]?.name ?? `Player ${seat + 1}`}</strong>;
+function Summary({ view, interviews, onInterviews }: { view: ReturnType<typeof buildView>; interviews: number; onInterviews: () => void }) {
   return (
-    <>
-      <section className="summary">
-        <h2>Results</h2>
-        <ol>
-          {ranked.map((s) => (
-            <li key={s.info.seat}>
-              <strong>{s.info.name}</strong> {outcome(s)}
-            </li>
-          ))}
-        </ol>
+    <section className="summary">
+      <h2>Results</h2>
+      <ol>
+        {finishingOrder(view.seats).map((s) => (
+          <li key={s.info.seat}>
+            <strong>{s.info.name}</strong> {outcome(s)}
+          </li>
+        ))}
+      </ol>
+      <div className="summary__actions">
         <Link className="btn btn--gold" to="/">
           Play again
         </Link>
-      </section>
-      {/* Games from before the interviews started have none, so they skip this. */}
-      {interviews.size > 0 && (
-        <section className="summary">
-          <h2>Exit interviews</h2>
-          <p className="muted small">
-            Each AI answered a few questions on the way out. Their answers are checked against what really happened.
-            {ais.length < ranked.length && " Humans aren't interviewed."}
-          </p>
-          <div className="exits">
-            {ais.map((s) => {
-              const e = interviews.get(s.info.seat);
-              return (
-                <article key={s.info.seat} className="exits__one" style={{ '--seat': SEAT_COLORS[s.info.seat % SEAT_COLORS.length] } as CSSProperties}>
-                  <h3>
-                    {s.info.name} <span className="muted small">{outcome(s)}</span>
-                  </h3>
-                  {e ? <InterviewAnswers event={e} events={events} who={who} /> : <p className="muted small">No interview: they didn't answer.</p>}
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      )}
-    </>
+        {/* Games from before the interviews started have none. */}
+        {interviews > 0 && (
+          <button type="button" className="btn" onClick={onInterviews}>
+            Read the exit interviews
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 
