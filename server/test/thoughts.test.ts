@@ -73,6 +73,16 @@ describe('pairThoughts', () => {
     expect(byMove.get('2:1')?.seat).toBe(1);
   });
 
+  it('puts the thinking behind an exit interview with the answers', () => {
+    const events = log(
+      { type: 'thoughts', stage: 'r2', seat: 3, action: 'interview', thoughts: "Say I was honest; they can't check." }, // 0
+      { type: 'interview', seat: 3, when: 'eliminated', answers: { say: 'I told the truth.', claimsTrue: true } }, // 1
+    );
+    const { byMove, loose } = pairThoughts(events);
+    expect(byMove.get('1')?.seq).toBe(0);
+    expect(loose.size).toBe(0);
+  });
+
   it('shows a thought with no move where it happened', () => {
     const events = log(
       thought(2, 'chat', 'cut off by the clock'), // 0: the floor closed before it spoke

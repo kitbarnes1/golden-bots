@@ -1,5 +1,5 @@
 import type { GameDetail } from './api.js';
-import { claimIsTruthful } from './balls.js';
+import { cashTotal, claimIsTruthful, claimTotal } from './balls.js';
 import type { GameEvent } from './events.js';
 import { pairThoughts, type ThoughtEvent } from './thoughts.js';
 import type { Ball, ClaimValue, DecisionPoint, FinalChoice, FinalOutcome, GameOptions, Stage } from './types.js';
@@ -68,6 +68,7 @@ export interface DatasetInterview {
   claims_true: boolean | null;
   saw_it_coming: boolean | null;
   winner_pick: number | null;
+  winner_pick_model: string | null;
   differently: string | null;
   planned: FinalChoice | 'undecided' | null;
   decided: DecisionPoint | null;
@@ -107,6 +108,7 @@ export interface MoveRow {
   say: string | null;
   /** A chat line aimed at one player. */
   to_seat: number | null;
+  to_model: string | null;
   /** Chat moves: the chat after a vote, rather than before it. */
   after_vote: boolean | null;
   /** Claims: the front row everyone could see, the hidden back row, and what they said was on it. */
@@ -114,13 +116,34 @@ export interface MoveRow {
   back: DatasetBall[] | null;
   claim: DatasetBall[] | null;
   truthful: boolean | null;
+  /** Claims: cash in pounds and Killers on each row, so a lie's size and kind can be read off directly. */
+  front_total: number | null;
+  front_killers: number | null;
+  back_total: number | null;
+  back_killers: number | null;
+  claim_total: number | null;
+  claim_killers: number | null;
+  /** Claims: 1 for the first to claim in the round, so later ones had heard the others first. */
+  claim_order: number | null;
+  /** Round 2 claims: their round 1 claim was shown to be false at the reveal. */
+  lied_before: boolean | null;
+  /** Claims: they were voted out that round (tie-breaks included), and the votes they got in its vote. */
+  voted_out: boolean | null;
+  votes_against: number | null;
   /** Votes and tie-breaks: who they voted out. */
   target_seat: number | null;
   target_model: string | null;
+  /** Votes and tie-breaks: whether the target's claim that round was true (nobody knew until after the vote), and whether the target went out. */
+  target_truthful: boolean | null;
+  target_out: boolean | null;
   /** Bin or Win: which way they picked, and the ball. */
   pick: 'bin' | 'win' | null;
   ball: DatasetBall | null;
   choice: FinalChoice | null;
+  /** Final choices and finalists' interviews: the other finalist, and what they chose. */
+  opponent_seat: number | null;
+  opponent_model: string | null;
+  opponent_choice: FinalChoice | null;
   interview: DatasetInterview | null;
   interview_checks: InterviewChecks | null;
   /** The game made this move for them, after an unusable reply. */
@@ -154,21 +177,38 @@ export const MOVE_FEATURES: Record<keyof MoveRow, Feature> = {
   move: 'string',
   say: 'string',
   to_seat: 'int64',
+  to_model: 'string',
   after_vote: 'bool',
   front: { list: BALL_FEATURE },
   back: { list: BALL_FEATURE },
   claim: { list: BALL_FEATURE },
   truthful: 'bool',
+  front_total: 'int64',
+  front_killers: 'int64',
+  back_total: 'int64',
+  back_killers: 'int64',
+  claim_total: 'int64',
+  claim_killers: 'int64',
+  claim_order: 'int64',
+  lied_before: 'bool',
+  voted_out: 'bool',
+  votes_against: 'int64',
   target_seat: 'int64',
   target_model: 'string',
+  target_truthful: 'bool',
+  target_out: 'bool',
   pick: 'string',
   ball: BALL_FEATURE,
   choice: 'string',
+  opponent_seat: 'int64',
+  opponent_model: 'string',
+  opponent_choice: 'string',
   interview: {
     when: 'string',
     claims_true: 'bool',
     saw_it_coming: 'bool',
     winner_pick: 'int64',
+    winner_pick_model: 'string',
     differently: 'string',
     planned: 'string',
     decided: 'string',
@@ -280,6 +320,7 @@ const ASKED_FOR: Record<MoveKind, ThoughtEvent['action'][]> = {
 };
 
 const ball = (b: Ball): DatasetBall => (b.kind === 'killer' ? { kind: 'killer', value: null } : { kind: 'cash', value: b.value });
+const killers = (balls: Ball[]) => balls.filter((b) => b.kind === 'killer').length;
 const claimed = (v: ClaimValue): DatasetBall => (v === 'killer' ? { kind: 'killer', value: null } : { kind: 'cash', value: v });
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -308,19 +349,38 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
   }));
   const who = (seat: number) => players[seat]!;
 
-  // What was dealt and what was revealed, looked up by "<stage>:<seat>".
+  // What was dealt and what was revealed, looked up by "<stage>:<seat>", and who went out each round.
   const fronts = new Map<string, Ball[]>();
   const backs = new Map<string, Ball[]>();
   const truth = new Map<string, boolean>();
+  /** Votes against each seat in each round's vote, by "<stage>:<seat>" (tie-breaks not included). */
+  const roundVotes = new Map<string, number>();
+  const out = new Map<string, number>();
   for (const e of events) {
     if (e.type === 'round_started') for (const d of e.dealt) fronts.set(`${e.stage}:${d.seat}`, d.front);
     else if (e.type === 'back_row') backs.set(`${e.stage}:${e.seat}`, e.back);
-    else if (e.type === 'eliminated') truth.set(`${e.stage}:${e.seat}`, e.truthful);
-    else if (e.type === 'back_rows_revealed') for (const r of e.rows) truth.set(`${e.stage}:${r.seat}`, r.truthful);
+    else if (e.type === 'eliminated') {
+      truth.set(`${e.stage}:${e.seat}`, e.truthful);
+      out.set(e.stage, e.seat);
+    } else if (e.type === 'back_rows_revealed') for (const r of e.rows) truth.set(`${e.stage}:${r.seat}`, r.truthful);
+    else if (e.type === 'votes_revealed') for (const v of e.votes) roundVotes.set(`${e.stage}:${v.target}`, (roundVotes.get(`${e.stage}:${v.target}`) ?? 0) + 1);
   }
+  const claimsMade = new Map<string, number>();
 
   const { byMove } = pairThoughts(events);
   const reveal = events.findLast((e): e is Extract<GameEvent, { type: 'final_reveal' }> => e.type === 'final_reveal');
+  /** The other finalist, and what they chose. */
+  const opponentOf = (seat: number): Partial<MoveRow> => {
+    const other = reveal?.choices.find((c) => c.seat !== seat);
+    if (!reveal || !other || !reveal.choices.some((c) => c.seat === seat)) return {};
+    return { opponent_seat: other.seat, opponent_model: who(other.seat).model, opponent_choice: other.choice };
+  };
+  const target = (stage: 'r1' | 'r2', seat: number): Partial<MoveRow> => ({
+    target_seat: seat,
+    target_model: who(seat).model,
+    target_truthful: truth.get(`${stage}:${seat}`) ?? null,
+    target_out: out.get(stage) === seat,
+  });
   const payout = (seat: number) => detail.players[seat]?.winnings ?? 0;
   const topWinnings = Math.max(0, ...detail.players.map((p) => p.winnings));
 
@@ -349,16 +409,32 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
       move,
       say: null,
       to_seat: null,
+      to_model: null,
       after_vote: null,
       front: null,
       back: null,
       claim: null,
       truthful: null,
+      front_total: null,
+      front_killers: null,
+      back_total: null,
+      back_killers: null,
+      claim_total: null,
+      claim_killers: null,
+      claim_order: null,
+      lied_before: null,
+      voted_out: null,
+      votes_against: null,
       target_seat: null,
       target_model: null,
+      target_truthful: null,
+      target_out: null,
       pick: null,
       ball: null,
       choice: null,
+      opponent_seat: null,
+      opponent_model: null,
+      opponent_choice: null,
       interview: null,
       interview_checks: null,
       ...fields,
@@ -371,8 +447,7 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
       latency_ms: t?.usage?.latencyMs ?? null,
     });
   };
-  const vote = (e: GameEvent, stage: 'r1' | 'r2', seat: number, target: number, key: string) =>
-    add(e, seat, stage, 'vote', key, { target_seat: target, target_model: who(target).model });
+  const vote = (e: GameEvent, stage: 'r1' | 'r2', seat: number, voted: number, key: string) => add(e, seat, stage, 'vote', key, target(stage, voted));
 
   for (const e of events) {
     switch (e.type) {
@@ -386,13 +461,27 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
         chat = null;
         break;
       case 'claim': {
+        const front = fronts.get(`${e.stage}:${e.seat}`) ?? [];
         const back = backs.get(`${e.stage}:${e.seat}`) ?? [];
+        const order = (claimsMade.get(e.stage) ?? 0) + 1;
+        claimsMade.set(e.stage, order);
+        const before = truth.get(`r1:${e.seat}`);
         add(e, e.seat, e.stage, 'claim', `${e.seq}`, {
           say: text(e.say),
-          front: (fronts.get(`${e.stage}:${e.seat}`) ?? []).map(ball),
+          front: front.map(ball),
           back: back.map(ball),
           claim: e.claim.map(claimed),
           truthful: truth.get(`${e.stage}:${e.seat}`) ?? claimIsTruthful(e.claim, back),
+          front_total: cashTotal(front),
+          front_killers: killers(front),
+          back_total: cashTotal(back),
+          back_killers: killers(back),
+          claim_total: claimTotal(e.claim),
+          claim_killers: e.claim.filter((v) => v === 'killer').length,
+          claim_order: order,
+          lied_before: e.stage === 'r2' && before !== undefined ? !before : null,
+          voted_out: out.get(e.stage) === e.seat,
+          votes_against: roundVotes.get(`${e.stage}:${e.seat}`) ?? 0,
         });
         break;
       }
@@ -400,6 +489,7 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
         add(e, e.seat, e.stage, chat ? 'chat' : 'speak', `${e.seq}`, {
           say: text(e.say),
           to_seat: e.to ?? null,
+          to_model: e.to === undefined ? null : who(e.to).model,
           after_vote: chat ? chat.reflect : null,
         });
         break;
@@ -416,25 +506,27 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
         break;
       case 'tie_decision':
         for (const d of e.decisions) {
-          add(e, d.seat, e.stage, 'tie_decide', `${e.seq}:${d.seat}`, { target_seat: d.target, target_model: who(d.target).model });
+          add(e, d.seat, e.stage, 'tie_decide', `${e.seq}:${d.seat}`, target(e.stage, d.target));
         }
         break;
       case 'ball_picked':
         add(e, e.seat, 'bow', 'pick', `${e.seq}`, { say: text(e.say), pick: e.action, ball: ball(e.ball) });
         break;
       case 'final_reveal':
-        for (const c of e.choices) add(e, c.seat, 'final', 'final_choice', `${e.seq}:${c.seat}`, { choice: c.choice });
+        for (const c of e.choices) add(e, c.seat, 'final', 'final_choice', `${e.seq}:${c.seat}`, { choice: c.choice, ...opponentOf(c.seat) });
         break;
       case 'interview': {
         const a = e.answers;
-        const out = detail.players[e.seat]?.eliminatedStage;
-        add(e, e.seat, e.when === 'final' || !out ? 'final' : out, 'interview', `${e.seq}`, {
+        const wentOut = detail.players[e.seat]?.eliminatedStage;
+        add(e, e.seat, e.when === 'final' || !wentOut ? 'final' : wentOut, 'interview', `${e.seq}`, {
           say: text(a.say),
+          ...(e.when === 'final' ? opponentOf(e.seat) : {}),
           interview: {
             when: e.when,
             claims_true: a.claimsTrue ?? null,
             saw_it_coming: a.sawItComing ?? null,
             winner_pick: a.winnerPick ?? null,
+            winner_pick_model: a.winnerPick == null ? null : (who(a.winnerPick)?.model ?? null),
             differently: text(a.differently),
             planned: a.planned ?? null,
             decided: a.decided ?? null,
