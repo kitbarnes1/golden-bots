@@ -2153,6 +2153,26 @@ textarea {
   background: var(--gold-2);
   border-color: transparent;
 }
+/* How many are in the tab so far, e.g. interviews as players leave */
+.tabs__count {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.12);
+}
+.tabs__tab[aria-selected='true'] .tabs__count {
+  background: rgba(36, 26, 0, 0.18);
+}
+.summary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .review {
   display: flex;
   flex-direction: column;
