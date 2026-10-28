@@ -326,7 +326,7 @@ export function GamePage() {
             />
           )}
 
-          {activeTab === 'interviews' && <ExitInterviews view={view} events={shown} />}
+          {activeTab === 'interviews' && <ExitInterviews view={view} events={shown} showThoughts={showThoughts} />}
           {activeTab === 'stage' && view.stage === 'over' && <Summary view={view} interviews={interviewCount} onInterviews={() => setTab('interviews')} />}
           {view.error && <p className="error">The game stopped: {view.error}</p>}
 

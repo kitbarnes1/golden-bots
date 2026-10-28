@@ -68,6 +68,9 @@ export function pairThoughts(events: GameEvent[]): PairedThoughts {
       case 'final_reveal':
         for (const c of e.choices) match(c.seat, ['final_choice'], `${e.seq}:${c.seat}`);
         break;
+      case 'interview':
+        match(e.seat, ['interview'], `${e.seq}`);
+        break;
       default:
         break;
     }

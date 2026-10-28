@@ -4,6 +4,7 @@ import {
   canSee,
   cashTotal,
   claimIsTruthful,
+  pairThoughts,
   type ActionRequest,
   type GameEvent,
   type GameOptions,
@@ -718,6 +719,11 @@ describe('exit interviews', () => {
     expect(interviews).toHaveLength(4);
     expect(interviews.find((i) => i.when === 'final')!.answers).toMatchObject({ say: 'No regrets.', claimsTrue: false, planned: 'split', trust: 4 });
     expect(warnings).toEqual([]);
+    // What each one was thinking as they answered is kept, privately, right before the answers.
+    for (const i of interviews) {
+      expect(events[i.seq - 1]).toMatchObject({ type: 'thoughts', action: 'interview', seat: i.seat, thoughts: "It's over.", vis: { seats: [i.seat] } });
+    }
+    expect(pairThoughts(events).loose.size).toBe(0);
   });
 
   it("doesn't hold the game up, but waits for every answer before it ends", async () => {

@@ -25,7 +25,7 @@ import {
   type Usage,
   type Visibility,
 } from '@gb/shared';
-import { AgentError, type Agent, type AgentContext } from '../agents/types.js';
+import { AgentError, type Agent, type AgentContext, type AgentResult } from '../agents/types.js';
 import { Host } from './host.js';
 import { mulberry32, pickOne, shuffle, type Rng } from './rng.js';
 import { cleanSay, validateResponse } from './validate.js';
@@ -894,20 +894,7 @@ export class GameEngine {
       const result = await s.agent.act(request, this.contextFor(seat), { requestId, signal: this.signal });
       this.throwIfAborted();
       this.recordUsage(s, result.usage);
-      if (result.thoughts || result.reasoning) {
-        this.push(
-          {
-            type: 'thoughts',
-            stage: this.stage,
-            seat,
-            action: request.kind,
-            ...(result.thoughts ? { thoughts: result.thoughts } : {}),
-            ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-            ...(result.usage ? { usage: result.usage } : {}),
-          },
-          { seats: [seat] },
-        );
-      }
+      this.pushThoughts(seat, request.kind, result);
       if (s.agent.interactive) this.push({ type: 'input_received', seat, requestId }, { seats: [seat] });
       if (result.timedOut) {
         this.push({ type: 'agent_error', seat, action: request.kind, message: 'Ran out of time, so autopilot answered.' });
@@ -929,6 +916,23 @@ export class GameEngine {
       this.waiting.delete(seat);
       this.status();
     }
+  }
+
+  /** What a contestant was thinking when they answered: private to them (and anyone watching once it's safe). */
+  private pushThoughts(seat: number, action: ActionRequest['kind'], result: AgentResult): void {
+    if (!result.thoughts && !result.reasoning) return;
+    this.push(
+      {
+        type: 'thoughts',
+        stage: this.stage,
+        seat,
+        action,
+        ...(result.thoughts ? { thoughts: result.thoughts } : {}),
+        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
+        ...(result.usage ? { usage: result.usage } : {}),
+      },
+      { seats: [seat] },
+    );
   }
 
   private recordUsage(s: SeatState, usage: Usage | undefined): void {
@@ -983,6 +987,8 @@ export class GameEngine {
           return;
         }
         this.answers.set(seat, valid.value.answers);
+        // Kept right before the answers, so the thinking pairs with them (and shows whether they meant it).
+        this.pushThoughts(seat, 'interview', result);
         this.push({ type: 'interview', seat, when: request.when, answers: valid.value.answers });
       } catch (err) {
         if (err instanceof AgentError) this.recordUsage(s, err.usage);
