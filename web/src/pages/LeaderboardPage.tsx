@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { formatMoney, groupRows, type GroupBy, type LeaderboardResponse, type LeaderboardRow } from '@gb/shared';
 import { CompareChart } from '../components/CompareChart';
 import { RankChart } from '../components/RankChart';
+import { TrustGrid } from '../components/TrustGrid';
 import { api, prefs } from '../lib/api';
 
 type SortKey =
@@ -296,6 +297,29 @@ export function LeaderboardPage() {
             onSelect={setHighlight}
             column={grouping.column}
           />
+
+          {data.trust.length > 0 && (
+            <section className="card">
+              <div className="card__head">
+                <h2>Who trusts whom</h2>
+              </div>
+              <p className="muted small lb__trust-note">
+                How much each {grouped ? 'group' : 'model'} down the side trusted each one across the top, from 1 (not at all) to
+                5 (completely), most trusted first. With every vote, each AI privately rates the players still in; in its exit
+                interview, it rates everyone it played. The big number is the average and the small one how many ratings it's
+                from. {includeHumans && 'Human players are rated but never asked, so they only appear across the top. '}
+                {grouped ? 'The diagonal is models in a group rating each other.' : 'The diagonal is a model rating another copy of itself.'}
+              </p>
+              <TrustGrid
+                pairs={data.trust}
+                rows={data.rows}
+                shown={shown}
+                groupBy={groupBy}
+                highlight={selected}
+                onSelect={setHighlight}
+              />
+            </section>
+          )}
         </>
       )}
     </div>
