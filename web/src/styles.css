@@ -2401,6 +2401,14 @@ textarea {
   gap: 8px 16px;
   margin-bottom: 12px;
 }
+/* Some measures have long names: their pickers shrink to fit a phone rather than widen the page. */
+.compare__controls .field--inline {
+  max-width: 100%;
+}
+.compare__controls select {
+  min-width: 0;
+  max-width: 100%;
+}
 .compare__plot svg {
   cursor: crosshair;
 }
@@ -2434,6 +2442,192 @@ textarea {
 }
 .compare__row span {
   color: var(--text-2);
+}
+
+/* Who trusts whom (heatmap). Wide grids scroll inside their own box, with both sets of names kept in view. */
+.lb__trust-note {
+  max-width: 90ch;
+}
+.tg__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+.tg__plot {
+  position: relative;
+}
+.tg__scroll {
+  overflow: auto;
+  max-height: 75vh;
+}
+.tg__table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 0.8rem;
+}
+.tg__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--card);
+}
+.tg__table tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--card);
+}
+.tg__table thead .tg__corner {
+  left: 0;
+  z-index: 3;
+  vertical-align: bottom;
+  text-align: right;
+  padding: 0 8px 6px 0;
+  font-weight: 400;
+}
+.tg__col {
+  vertical-align: bottom;
+  padding: 0 0 6px;
+  font-weight: 400;
+}
+.tg__col-text {
+  display: inline-block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  max-height: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.tg__row {
+  padding: 0 8px 0 0;
+  text-align: right;
+  font-weight: 400;
+}
+.tg__row-text {
+  display: block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.tg__head-btn {
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  max-width: 100%;
+}
+.tg__head-btn:hover .tg__col-text,
+.tg__head-btn:hover .tg__row-text,
+.tg__head--on .tg__col-text,
+.tg__head--on .tg__row-text {
+  color: var(--text);
+}
+.tg__head--on .tg__col-text,
+.tg__head--on .tg__row-text {
+  font-weight: 700;
+}
+.tg__cell {
+  width: 44px;
+  min-width: 44px;
+  height: 40px;
+  padding: 0;
+}
+.tg__cell--none {
+  text-align: center;
+  color: var(--chart-muted);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+.tg__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  font: inherit;
+  line-height: 1.1;
+  color: inherit;
+  cursor: default;
+}
+.tg__btn--few {
+  color: var(--text-2);
+}
+.tg__btn:hover,
+.tg__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--text);
+}
+.tg__avg {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tg__n {
+  font-size: 0.65rem;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+.tg__tooltip {
+  z-index: 4;
+}
+.tg__split {
+  margin-top: 4px;
+}
+.tg__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.tg__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tg__scale {
+  display: inline-block;
+  width: 120px;
+  height: 10px;
+  border-radius: 3px;
+}
+.tg__swatch {
+  display: inline-block;
+  width: 16px;
+  height: 14px;
+  border-radius: 3px;
+  text-align: center;
+  line-height: 14px;
+}
+.tg__swatch--none {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--chart-muted);
+}
+@media (max-width: 600px) {
+  .tg__row-text {
+    max-width: 110px;
+  }
+  .tg__col-text {
+    max-height: 110px;
+  }
+  .tg__table thead .tg__corner span {
+    display: none;
+  }
 }
 .newgame__cost {
   margin: 4px 0 12px;
