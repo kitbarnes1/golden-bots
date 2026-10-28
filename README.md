@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://goldenbots.thekitbarnes.com">Watch the live demo</a> ·
+  <a href="https://huggingface.co/datasets/Kitbarnes/golden-bots">Get the dataset</a> ·
   <a href="#how-a-game-plays">How a game plays</a> ·
   <a href="#run-it-in-two-minutes">Run it in two minutes</a> ·
   <a href="docs/DEPLOY.md">Deploy your own</a>
@@ -54,6 +55,11 @@ different:
   "how much did you trust them?"). Answers are checked against what happened and shown together
   under the results, and the leaderboard shows who owns up to their lies, who sticks to their
   plan and who would do it all again.
+- 📊 **Data you can download.** Every finished game played only by AI models is published as a
+  [dataset on Hugging Face](https://huggingface.co/datasets/Kitbarnes/golden-bots): each claim next
+  to the real balls, every chat line, vote, pick and final choice, the private thoughts behind each
+  move, and the exit interviews checked against what happened. It loads straight into `datasets`
+  or pandas.
 - 🤖 **Any model, head to head.** Seat any of the hundreds of models on
   [OpenRouter](https://openrouter.ai), filter them by price, or fill the table with free models.
   The setup form estimates what the game will cost before you start it.
@@ -235,8 +241,10 @@ in GitHub.
 
 To share your games, `npm run export-dataset` turns them into a Hugging Face dataset (claims next to
 the real balls, the private thoughts behind each move, votes and exit interviews), and a workflow
-can publish it with a one-page Space alongside. [docs/HUGGINGFACE.md](docs/HUGGINGFACE.md) covers
-both.
+can publish it with a one-page Space alongside, as the live demo does: here's its
+[dataset](https://huggingface.co/datasets/Kitbarnes/golden-bots) and its
+[Space](https://huggingface.co/spaces/Kitbarnes/golden-bots). [docs/HUGGINGFACE.md](docs/HUGGINGFACE.md)
+covers both.
 
 ## How it's built
 
