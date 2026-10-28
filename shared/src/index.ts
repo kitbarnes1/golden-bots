@@ -5,3 +5,4 @@ export * from './api.js';
 export * from './cost.js';
 export * from './thoughts.js';
 export * from './labs.js';
+export * from './dataset.js';

@@ -233,6 +233,11 @@ Terraform for a small AWS Graviton instance (about $14 a month), encrypted stora
 backups, Cloudflare for TLS and DNS, and push-to-deploy from GitHub Actions with no AWS keys stored
 in GitHub.
 
+To share your games, `npm run export-dataset` turns them into a Hugging Face dataset (claims next to
+the real balls, the private thoughts behind each move, votes and exit interviews), and a workflow
+can publish it with a one-page Space alongside. [docs/HUGGINGFACE.md](docs/HUGGINGFACE.md) covers
+both.
+
 ## How it's built
 
 ```
@@ -242,6 +247,8 @@ server/   Fastify API, game engine, agents (OpenRouter, human, mock), SQLite, SS
   src/agents/   LLM prompts and parsing, human input, mock strategies
 web/      React + Vite front end: stage view, live feed, replays, leaderboard charts
 infra/    Terraform for AWS + Cloudflare
+scripts/  Dev runner, dataset export and the Hugging Face Space builder
+space/    The Hugging Face Space: one static page
 ```
 
 Games are event-sourced. The engine emits an ordered log of events, which is stored in SQLite,
