@@ -109,6 +109,21 @@ describe('API', () => {
     expect(sum((r) => r.trustReceivedScores)).toBe(12);
     expect(sum((r) => r.trustReceivedTotal)).toBe(sum((r) => r.trustGivenTotal));
     expect(sum((r) => r.trustGivenTotal)).toBeGreaterThanOrEqual(12);
+    // With their votes, the four rate the three others in round 1 and the three left rate the two others in round 2:
+    // every mock says whether it believes each one and scores them all.
+    expect(sum((r) => r.beliefs)).toBe(18);
+    expect(sum((r) => r.voteTrustGivenScores)).toBe(18);
+    expect(sum((r) => r.voteTrustReceivedScores)).toBe(18);
+    expect(sum((r) => r.voteTrustReceivedTotal)).toBe(sum((r) => r.voteTrustGivenTotal));
+    // A call on a false claim counts for the caller and for the liar alike.
+    expect(sum((r) => r.ownLiesRated)).toBe(sum((r) => r.liesRated));
+    expect(sum((r) => r.ownLiesBelieved)).toBe(sum((r) => r.liesBelieved));
+    const calls = game.events.flatMap((e) => (e.type === 'trust' ? e.ratings.filter((r) => r.believes !== null) : []));
+    expect(calls).toHaveLength(18);
+    for (const r of all.rows) expect(r.beliefsRight).toBeLessThanOrEqual(r.beliefs);
+    // Honest Abe never lies, so there's nothing of his to be convinced by; the bluffer believes nobody.
+    expect(honest.ownLiesRated).toBe(0);
+    expect(all.rows.find((r) => r.key === 'mock/bluffer')!.liesBelieved).toBe(0);
     // Who trusts whom: the same interview scores, pair by pair, and every usable rating given with a vote.
     expect(ranked.trust).toEqual([]);
     const fromInterviews = all.trust.filter((p) => p.source === 'interview');
@@ -261,12 +276,17 @@ describe('API', () => {
     // The leaderboard leaves humans out unless asked for.
     const board = async (q: string) => (await app.inject(`/api/leaderboard?includeUnranked=1${q}`)).json<LeaderboardResponse>();
     expect((await board('')).rows.some((r) => r.kind === 'human')).toBe(false);
-    expect((await board('&includeHumans=1')).rows.some((r) => r.kind === 'human')).toBe(true);
+    const withHumans = await board('&includeHumans=1');
+    expect(withHumans.rows.some((r) => r.kind === 'human')).toBe(true);
+    // The human isn't asked for ratings with their vote, but the AIs rate them; leaving humans out changes nobody else's numbers.
+    const kit = withHumans.rows.find((r) => r.kind === 'human')!;
+    expect([kit.beliefs, kit.voteTrustGivenScores]).toEqual([0, 0]);
+    expect(kit.voteTrustReceivedScores).toBeGreaterThanOrEqual(3);
+    expect((await board('')).rows).toEqual(withHumans.rows.filter((r) => r.kind !== 'human'));
     // So does the trust grid, where the human is rated as "humans" (they're never asked to rate).
     expect((await board('')).trust.some((p) => p.to === TRUST_HUMANS_KEY)).toBe(false);
-    const withHuman = (await board('&includeHumans=1')).trust;
-    expect(withHuman.some((p) => p.to === TRUST_HUMANS_KEY)).toBe(true);
-    expect(withHuman.some((p) => p.from === TRUST_HUMANS_KEY)).toBe(false);
+    expect(withHumans.trust.some((p) => p.to === TRUST_HUMANS_KEY)).toBe(true);
+    expect(withHumans.trust.some((p) => p.from === TRUST_HUMANS_KEY)).toBe(false);
     // Chat is rejected once the game is over.
     const late = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers: { 'x-player-token': playerToken! }, payload: { text: 'hi' } });
     expect(late.statusCode).toBe(409);

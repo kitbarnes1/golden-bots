@@ -67,6 +67,16 @@ const stats = (seat: number): PlayerStats => ({
   trustGivenCount: 0,
   trustReceived: 0,
   trustReceivedCount: 0,
+  beliefs: 0,
+  beliefsRight: 0,
+  liesRated: 0,
+  liesBelieved: 0,
+  ownLiesRated: 0,
+  ownLiesBelieved: 0,
+  voteTrustGiven: 0,
+  voteTrustGivenCount: 0,
+  voteTrustReceived: 0,
+  voteTrustReceivedCount: 0,
 });
 
 type Seat = { kind: PlayerKind; key: string };
@@ -171,13 +181,15 @@ describe('trust grid in the leaderboard', () => {
       playGame(before, [ai('a/one'), ai('b/two'), ai('c/three'), ai('d/four')], [voteTrust('r1', 0, [[1, 4], [2, 3]]), voteTrust('r2', 0, [[1, 2]]), interview(3, [[0, 5]])]);
       const expected = before.leaderboard({ includeUnranked: false, includeHumans: false }).trust;
       expect(expected).toHaveLength(3);
-      // Back to how a database from before this table looked.
+      // Back to how a database from before this table looked (so without the columns migration 6 adds after it, too).
       before.sql.exec('DROP TABLE trust_pairs; PRAGMA user_version = 4;');
+      const migration6 = ['beliefs', 'beliefs_right', 'lies_rated', 'lies_believed', 'own_lies_rated', 'own_lies_believed', 'vote_trust_given', 'vote_trust_given_n', 'vote_trust_received', 'vote_trust_received_n'];
+      for (const col of migration6) before.sql.exec(`ALTER TABLE game_players DROP COLUMN ${col}`);
       before.close();
       dbs.splice(dbs.indexOf(before), 1);
 
       const after = open(file);
-      expect((after.sql.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(5);
+      expect((after.sql.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(6);
       expect(after.leaderboard({ includeUnranked: false, includeHumans: false }).trust).toEqual(expected);
       expect(pair(expected, 'vote', 'a/one', 'b/two')).toMatchObject({ total: 6, ratings: 2 });
     } finally {
