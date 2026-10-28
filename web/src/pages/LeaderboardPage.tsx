@@ -11,6 +11,7 @@ type SortKey =
   | 'totalWinnings'
   | 'finalRate'
   | 'splitRate'
+  | 'keptWord'
   | 'honesty'
   | 'bestWin'
   | 'invalidResponses'
@@ -27,6 +28,8 @@ function metric(r: LeaderboardRow, key: SortKey): number | string {
       return pct(r.finals, r.games) ?? -1;
     case 'splitRate':
       return pct(r.splits, r.splits + r.steals) ?? -1;
+    case 'keptWord':
+      return pct(r.promisesKept, r.splitPromises) ?? -1;
     case 'honesty':
       return pct(r.truthfulClaims, r.claims) ?? -1;
     default:
@@ -42,6 +45,12 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
   { key: 'bestWin', label: 'Best', title: 'Biggest single win', numeric: true },
   { key: 'finalRate', label: 'Made final', title: 'Share of games where they survived both votes', numeric: true },
   { key: 'splitRate', label: 'Split rate', title: 'Share of finals where they chose SPLIT', numeric: true },
+  {
+    key: 'keptWord',
+    label: 'Kept their word',
+    title: 'Of the finals where they told the other finalist they would split, the share where they did',
+    numeric: true,
+  },
   { key: 'honesty', label: 'Honesty', title: 'Share of back-row claims that were the truth', numeric: true },
   { key: 'invalidResponses', label: 'Fumbles', title: 'Unusable or failed responses (the host chose for them)', numeric: true },
   { key: 'costUsd', label: 'API cost', title: 'Total OpenRouter spend for this contestant', numeric: true },
@@ -253,6 +262,12 @@ export function LeaderboardPage() {
                       </td>
                       <td className="num" title={`${r.splits} split, ${r.steals} steal`}>
                         {fmtPct(pct(r.splits, r.splits + r.steals))}
+                      </td>
+                      <td
+                        className="num"
+                        title={r.splitPromises ? `Split in ${r.promisesKept} of the ${r.splitPromises} finals where they said they would` : 'No promises to split yet'}
+                      >
+                        {fmtPct(pct(r.promisesKept, r.splitPromises))}
                       </td>
                       <td className="num" title={`${r.truthfulClaims} of ${r.claims} claims truthful`}>
                         {fmtPct(pct(r.truthfulClaims, r.claims))}

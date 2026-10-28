@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { splitPromises } from '@gb/shared';
 import type {
   ActionRequest,
   CreateGameResponse,
@@ -108,6 +109,10 @@ describe('API', () => {
     expect(sum((r) => r.trustReceivedScores)).toBe(12);
     expect(sum((r) => r.trustReceivedTotal)).toBe(sum((r) => r.trustGivenTotal));
     expect(sum((r) => r.trustGivenTotal)).toBeGreaterThanOrEqual(12);
+    // Promises to split are read from the final chat, and counted against what each finalist chose.
+    const promised = splitPromises(game.events);
+    expect(sum((r) => r.splitPromises)).toBe(promised.size);
+    expect(sum((r) => r.promisesKept)).toBe(game.players.filter((p) => promised.has(p.seat) && p.finalChoice === 'split').length);
   });
 
   it('rejects bad lineups and AI seats without an API key', async () => {

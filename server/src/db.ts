@@ -1,19 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type {
-  GameEvent,
-  GameOptions,
-  GamePlayerSummary,
-  GameStatus,
-  GameSummary,
-  LeaderboardHistoryPoint,
-  LeaderboardResponse,
-  LeaderboardRow,
-  PlayerInfo,
-  PlayerKind,
-  Stage,
-  FinalChoice,
+import {
+  splitPromises,
+  type GameEvent,
+  type GameOptions,
+  type GamePlayerSummary,
+  type GameStatus,
+  type GameSummary,
+  type LeaderboardHistoryPoint,
+  type LeaderboardResponse,
+  type LeaderboardRow,
+  type PlayerInfo,
+  type PlayerKind,
+  type Stage,
+  type FinalChoice,
 } from '@gb/shared';
 import type { PlayerStats } from './engine/engine.js';
 
@@ -94,6 +95,10 @@ const MIGRATIONS: string[] = [
   ALTER TABLE game_players ADD COLUMN trust_received INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE game_players ADD COLUMN trust_received_n INTEGER NOT NULL DEFAULT 0;
   `,
+  // Finalists: did they tell the other they'd split? Games played before this are read from their chat (fillInPromises).
+  `
+  ALTER TABLE game_players ADD COLUMN promised_split INTEGER;
+  `,
 ];
 
 const bit = (v: boolean | null | undefined) => (v === null || v === undefined ? null : v ? 1 : 0);
@@ -119,6 +124,7 @@ export class Db {
     this.sql = new DatabaseSync(file);
     this.sql.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     this.migrate();
+    this.fillInPromises();
   }
 
   private migrate(): void {
@@ -133,6 +139,30 @@ export class Db {
         this.sql.exec('ROLLBACK');
         throw err;
       }
+    }
+  }
+
+  /**
+   * A finalist's promise to split is worked out as their game ends. Games that ended before
+   * that was counted have none stored, so read them from the saved final chat, once.
+   */
+  private fillInPromises(): void {
+    const finalists = this.sql
+      .prepare('SELECT game_id, seat FROM game_players WHERE final_choice IS NOT NULL AND promised_split IS NULL')
+      .all() as { game_id: string; seat: number }[];
+    if (finalists.length === 0) return;
+    const update = this.sql.prepare('UPDATE game_players SET promised_split = ? WHERE game_id = ? AND seat = ?');
+    const promised = new Map<string, Map<number, string>>();
+    this.sql.exec('BEGIN');
+    try {
+      for (const { game_id: id, seat } of finalists) {
+        if (!promised.has(id)) promised.set(id, splitPromises(this.events(id, ['speech', 'final_reveal'])));
+        update.run(promised.get(id)!.has(seat) ? 1 : 0, id, seat);
+      }
+      this.sql.exec('COMMIT');
+    } catch (err) {
+      this.sql.exec('ROLLBACK');
+      throw err;
     }
   }
 
@@ -171,10 +201,12 @@ export class Db {
       .run(gameId, seq, ts, type, JSON.stringify(vis), JSON.stringify(body));
   }
 
-  events(gameId: string): GameEvent[] {
+  /** A game's events in order: all of them, or only those of the given types. */
+  events(gameId: string, types?: GameEvent['type'][]): GameEvent[] {
+    const only = types ? ` AND type IN (${types.map(() => '?').join(',')})` : '';
     const rows = this.sql
-      .prepare('SELECT seq, ts, type, vis, body FROM game_events WHERE game_id = ? ORDER BY seq')
-      .all(gameId) as { seq: number; ts: number; type: string; vis: string; body: string }[];
+      .prepare(`SELECT seq, ts, type, vis, body FROM game_events WHERE game_id = ?${only} ORDER BY seq`)
+      .all(gameId, ...(types ?? [])) as { seq: number; ts: number; type: string; vis: string; body: string }[];
     return rows.map(
       (r) => ({ ...JSON.parse(r.body), type: r.type, seq: r.seq, ts: r.ts, vis: JSON.parse(r.vis) }) as GameEvent,
     );
@@ -192,7 +224,7 @@ export class Db {
         .prepare('UPDATE games SET status = ?, finished_at = ?, jackpot = ?, cost_usd = ?, error = ? WHERE id = ?')
         .run(status, Date.now(), result.jackpot, cost, result.error ?? null, gameId);
       const update = this.sql.prepare(
-        `UPDATE game_players SET eliminated_stage = ?, reached_final = ?, final_choice = ?, final_outcome = ?,
+        `UPDATE game_players SET eliminated_stage = ?, reached_final = ?, final_choice = ?, final_outcome = ?, promised_split = ?,
            winnings = ?, claims = ?, truthful_claims = ?, votes_received = ?, invalid_responses = ?,
            llm_calls = ?, cost_usd = ?,
            iv_done = ?, iv_claims_true = ?, iv_lied = ?, iv_saw_coming = ?, iv_called_winner = ?,
@@ -207,6 +239,7 @@ export class Db {
           s.reachedFinal ? 1 : 0,
           s.finalChoice,
           s.finalOutcome,
+          bit(s.promisedSplit),
           s.winnings,
           s.claims,
           s.truthfulClaims,
@@ -314,6 +347,8 @@ export class Db {
            SUM(gp.final_outcome = 'stole') AS stole,
            SUM(gp.final_outcome = 'stolen_from') AS stolen_from,
            SUM(gp.final_outcome = 'mutual_steal') AS mutual,
+           SUM(gp.promised_split) AS promises,
+           SUM(gp.promised_split = 1 AND gp.final_choice = 'split') AS promises_kept,
            SUM(gp.claims) AS claims,
            SUM(gp.truthful_claims) AS truthful,
            SUM(gp.votes_received) AS votes,
@@ -381,6 +416,8 @@ export class Db {
           stoleWins: num(r.stole),
           gotStolenFrom: num(r.stolen_from),
           mutualSteals: num(r.mutual),
+          splitPromises: num(r.promises),
+          promisesKept: num(r.promises_kept),
           claims: num(r.claims),
           truthfulClaims: num(r.truthful),
           votesReceived: num(r.votes),

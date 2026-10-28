@@ -1,14 +1,15 @@
-import type {
-  ActionRequest,
-  Ball,
-  ClaimValue,
-  FinalChoice,
-  FinalOutcome,
-  GameEvent,
-  GameOptions,
-  PauseReason,
-  Payout,
-  PlayerInfo,
+import {
+  promisesSplit,
+  type ActionRequest,
+  type Ball,
+  type ClaimValue,
+  type FinalChoice,
+  type FinalOutcome,
+  type GameEvent,
+  type GameOptions,
+  type PauseReason,
+  type Payout,
+  type PlayerInfo,
 } from '@gb/shared';
 
 export type ViewStage = 'intro' | 'r1' | 'r2' | 'bow' | 'final' | 'over';
@@ -46,6 +47,8 @@ export interface BoardView {
 export interface FinalView {
   jackpot: number;
   seats: [number, number];
+  /** Finalists who told the other they'd split before the reveal, with the first line that did. */
+  promised: Record<number, string>;
   outcome?: FinalOutcome;
   payouts?: Payout[];
 }
@@ -211,7 +214,7 @@ function apply(v: GameView, e: GameEvent): void {
       break;
     case 'final_started':
       v.stage = 'final';
-      v.final = { jackpot: e.jackpot, seats: e.seats };
+      v.final = { jackpot: e.jackpot, seats: e.seats, promised: {} };
       break;
     case 'choice_locked':
       v.seats[e.seat]!.choiceLocked = true;
@@ -237,6 +240,8 @@ function apply(v: GameView, e: GameEvent): void {
       break;
     case 'speech':
       if (v.floor) v.floor.messages++;
+      // The same test as splitPromises, one line at a time.
+      if (e.stage === 'final' && v.final && !v.final.outcome && !(e.seat in v.final.promised) && promisesSplit(e.say)) v.final.promised[e.seat] = e.say;
       break;
     case 'chat_ended':
       v.floor = undefined;

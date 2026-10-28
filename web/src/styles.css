@@ -1148,6 +1148,10 @@ textarea {
 }
 .final__status {
   min-height: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
 }
 .final__outcome {
   margin-top: 6px;

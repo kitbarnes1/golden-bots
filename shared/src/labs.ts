@@ -140,6 +140,8 @@ const SUMMED = [
   'stoleWins',
   'gotStolenFrom',
   'mutualSteals',
+  'splitPromises',
+  'promisesKept',
   'claims',
   'truthfulClaims',
   'votesReceived',
