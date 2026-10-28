@@ -24,3 +24,7 @@ tfplan
 
 # Terraform backend settings (your state bucket name)
 backend.hcl
+
+# Hugging Face: the exported dataset, and the Space's copy of the replay GIF (see docs/HUGGINGFACE.md)
+dataset/
+space/replay.gif

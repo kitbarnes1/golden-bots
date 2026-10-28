@@ -1,0 +1,79 @@
+name: Hugging Face
+
+# Exports the finished games from the live site as a dataset, rebuilds the Space
+# page from it, and pushes both to Hugging Face. Run it by hand from the Actions tab.
+# Off until it's set up (see docs/HUGGINGFACE.md). It needs repository variables
+# (Settings > Secrets and variables > Actions > Variables):
+#   HF_DATASET_ID   the dataset repo, such as "your-name/golden-bots"
+#   HF_SPACE_ID     the Space, such as "your-name/golden-bots"
+#   GOLDEN_BOTS_URL optional: the site to export from (defaults to the live demo)
+# and a secret, HF_TOKEN: a fine-grained Hugging Face token that can write to just
+# those two repos.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: huggingface
+  cancel-in-progress: false
+
+jobs:
+  not-set-up:
+    if: vars.HF_DATASET_ID == '' || vars.HF_SPACE_ID == ''
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "::notice::Nothing to do. Set the HF_DATASET_ID and HF_SPACE_ID variables and the HF_TOKEN secret first (see docs/HUGGINGFACE.md)."
+
+  sync:
+    if: vars.HF_DATASET_ID != '' && vars.HF_SPACE_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the token is there
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::Add an HF_TOKEN secret (see docs/HUGGINGFACE.md)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Export the dataset
+        run: npm run export-dataset
+        env:
+          GOLDEN_BOTS_URL: ${{ vars.GOLDEN_BOTS_URL }}
+          HF_DATASET_ID: ${{ vars.HF_DATASET_ID }}
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
+
+      - name: Build the Space page
+        run: npm run build-space
+        env:
+          HF_DATASET_ID: ${{ vars.HF_DATASET_ID }}
+
+      - name: Push the dataset
+        uses: huggingface/hub-sync@fdffea8e04104d0bd4e3181c5feb3025f0433ff5 # v0.3.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: ${{ vars.HF_DATASET_ID }}
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: dataset
+          subdirectory: dataset
+
+      - name: Push the Space
+        uses: huggingface/hub-sync@fdffea8e04104d0bd4e3181c5feb3025f0433ff5 # v0.3.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: ${{ vars.HF_SPACE_ID }}
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: static
+          subdirectory: space

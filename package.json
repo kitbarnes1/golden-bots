@@ -20,6 +20,8 @@
     "build": "npm run build --workspace web && npm run build --workspace server",
     "start": "npm run start --workspace server",
     "test": "npm run test --workspace server",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p scripts",
+    "export-dataset": "tsx scripts/export-dataset.ts",
+    "build-space": "tsx scripts/build-space.ts"
   }
 }
