@@ -141,10 +141,30 @@ export interface LeaderboardHistoryPoint {
   winnings: number;
 }
 
+/** Where a trust rating came from: privately with each vote, or in the exit interview. */
+export type TrustSource = 'vote' | 'interview';
+
+/** In the trust grid, every human player is one contestant. */
+export const TRUST_HUMANS_KEY = 'humans';
+
+/** How much one contestant trusted another, 1 (not at all) to 5 (completely), over every game they met in. */
+export interface TrustPair {
+  /** Who gave the ratings: a leaderboard row key (or TRUST_HUMANS_KEY). */
+  from: string;
+  /** Who they rated. The same as `from` when a model rated another copy of itself. */
+  to: string;
+  source: TrustSource;
+  /** The sum of the ratings, and how many there were. */
+  total: number;
+  ratings: number;
+}
+
 export interface LeaderboardResponse {
   rows: LeaderboardRow[];
   history: LeaderboardHistoryPoint[];
   totalGames: number;
+  /** Who trusts whom, per pair of contestants and source. */
+  trust: TrustPair[];
 }
 
 export interface ModelOption {

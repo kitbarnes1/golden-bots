@@ -28,7 +28,7 @@ async function playInto(db: Db, id: string, seed: number): Promise<void> {
   db.finishGame(id, 'finished', { jackpot: result.jackpot, stats: result.stats });
 }
 
-/** What migration 5 added: the private ratings with each vote, checked against the truth. */
+/** What migration 6 added: the private ratings with each vote, checked against the truth. */
 const VOTE_RATING_COLUMNS = [
   'beliefs',
   'beliefs_right',
@@ -66,14 +66,14 @@ describe('Db migrations', () => {
     expect(sum('lies_rated')).toBeGreaterThan(0);
     expect(sum('vote_trust_received')).toBe(sum('vote_trust_given'));
 
-    // Wind the database back to version 4, from before the columns, with one game from before the ratings too.
+    // Wind the database back to version 5, from before the columns, with one game from before the ratings too.
     db.sql.exec(`DELETE FROM game_events WHERE game_id = 'older' AND type = 'trust'`);
     for (const col of VOTE_RATING_COLUMNS) db.sql.exec(`ALTER TABLE game_players DROP COLUMN ${col}`);
-    db.sql.exec('PRAGMA user_version = 4');
+    db.sql.exec('PRAGMA user_version = 5');
     db.close();
 
     db = new Db(file);
-    expect(db.sql.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
+    expect(db.sql.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
     // The same numbers the engine counted as it went...
     expect(counts(db, 'rated')).toEqual(counted);
     // ...and nothing for a game without ratings.

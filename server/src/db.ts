@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { TRUST_HUMANS_KEY } from '@gb/shared';
 import type {
   GameEvent,
+  GameEventBody,
   GameOptions,
   GamePlayerSummary,
   GameStatus,
@@ -14,10 +16,16 @@ import type {
   PlayerKind,
   Stage,
   FinalChoice,
+  TrustPair,
+  TrustSource,
 } from '@gb/shared';
 import type { PlayerStats } from './engine/engine.js';
+import { trustPairs } from './trust.js';
 
-const MIGRATIONS: string[] = [
+/** SQL to run, or a step that needs code (such as reading back stored events). Each runs in a transaction. */
+type Migration = string | ((sql: DatabaseSync) => void);
+
+const MIGRATIONS: Migration[] = [
   `
   CREATE TABLE games (
     id TEXT PRIMARY KEY,
@@ -94,6 +102,22 @@ const MIGRATIONS: string[] = [
   ALTER TABLE game_players ADD COLUMN trust_received INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE game_players ADD COLUMN trust_received_n INTEGER NOT NULL DEFAULT 0;
   `,
+  // Who trusted whom: per game, each player's ratings of each other one, at the votes and in the exit
+  // interviews (sum and count). Filled in as each game finishes; earlier games are read back from their events.
+  (sql) => {
+    sql.exec(`
+      CREATE TABLE trust_pairs (
+        game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        rater_seat INTEGER NOT NULL,
+        rated_seat INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        ratings INTEGER NOT NULL,
+        PRIMARY KEY (game_id, source, rater_seat, rated_seat)
+      );
+    `);
+    for (const { id } of sql.prepare('SELECT id FROM games').all() as { id: string }[]) recordTrust(sql, id);
+  },
   // The private ratings with each vote, checked against the truth: calls made on others' claims
   // and how many were right, the false claims among them and how many were believed, the calls
   // others made on their own false claims, and trust given and got. Games played since the ratings
@@ -158,6 +182,20 @@ const MIGRATIONS: string[] = [
   `,
 ];
 
+/** Who rated whom in this game, from its stored events (replacing anything recorded for it before). */
+function recordTrust(sql: DatabaseSync, gameId: string): void {
+  const events = sql
+    .prepare(`SELECT type, body FROM game_events WHERE game_id = ? AND type IN ('trust', 'interview') ORDER BY seq`)
+    .all(gameId) as { type: string; body: string }[];
+  sql.prepare('DELETE FROM trust_pairs WHERE game_id = ?').run(gameId);
+  const insert = sql.prepare(
+    'INSERT INTO trust_pairs (game_id, source, rater_seat, rated_seat, total, ratings) VALUES (?, ?, ?, ?, ?, ?)',
+  );
+  for (const p of trustPairs(events.map((e) => ({ ...JSON.parse(e.body), type: e.type }) as GameEventBody))) {
+    insert.run(gameId, p.source, p.rater, p.rated, p.total, p.ratings);
+  }
+}
+
 const bit = (v: boolean | null | undefined) => (v === null || v === undefined ? null : v ? 1 : 0);
 
 export interface NewGame {
@@ -188,7 +226,9 @@ export class Db {
     for (let v = version; v < MIGRATIONS.length; v++) {
       this.sql.exec('BEGIN');
       try {
-        this.sql.exec(MIGRATIONS[v]!);
+        const step = MIGRATIONS[v]!;
+        if (typeof step === 'string') this.sql.exec(step);
+        else step(this.sql);
         this.sql.exec(`PRAGMA user_version = ${v + 1}`);
         this.sql.exec('COMMIT');
       } catch (err) {
@@ -305,6 +345,7 @@ export class Db {
           s.seat,
         );
       }
+      recordTrust(this.sql, gameId);
       this.sql.exec('COMMIT');
     } catch (err) {
       this.sql.exec('ROLLBACK');
@@ -446,6 +487,25 @@ export class Db {
       )
       .get() as { n: number };
 
+    // Who trusts whom, between contestants rather than seats. Every human player counts as one.
+    const pairFilter = [`g.status = 'finished'`];
+    if (!opts.includeUnranked) pairFilter.push('g.ranked = 1');
+    if (!opts.includeHumans) pairFilter.push(`r.kind != 'human'`, `d.kind != 'human'`);
+    const trust = this.sql
+      .prepare(
+        `SELECT CASE WHEN r.kind = 'human' THEN :humans ELSE r.player_key END AS rater,
+           CASE WHEN d.kind = 'human' THEN :humans ELSE d.player_key END AS rated,
+           tp.source AS source, SUM(tp.total) AS total, SUM(tp.ratings) AS ratings
+         FROM trust_pairs tp
+         JOIN games g ON g.id = tp.game_id
+         JOIN game_players r ON r.game_id = tp.game_id AND r.seat = tp.rater_seat
+         JOIN game_players d ON d.game_id = tp.game_id AND d.seat = tp.rated_seat
+         WHERE ${pairFilter.join(' AND ')}
+         GROUP BY rater, rated, tp.source
+         ORDER BY rater, rated, tp.source`,
+      )
+      .all({ humans: TRUST_HUMANS_KEY }) as Row[];
+
     return {
       rows: rows.map(
         (r): LeaderboardRow => ({
@@ -511,6 +571,15 @@ export class Db {
         }),
       ),
       totalGames: totalGames.n,
+      trust: trust.map(
+        (t): TrustPair => ({
+          from: t.rater as string,
+          to: t.rated as string,
+          source: t.source as TrustSource,
+          total: num(t.total),
+          ratings: num(t.ratings),
+        }),
+      ),
     };
   }
 

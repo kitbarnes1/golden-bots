@@ -3,8 +3,8 @@
 Two things can go on [Hugging Face](https://huggingface.co):
 
 - **A dataset** of the finished games: every back-row claim next to the real balls, every chat line,
-  vote, pick and final choice, the private thoughts behind each move, and the exit interviews checked
-  against what happened. It's made by `npm run export-dataset`.
+  vote, pick and final choice, the private thoughts behind each move, who believed and trusted whom,
+  and the exit interviews checked against what happened. It's made by `npm run export-dataset`.
 - **A Space**: one static page (free to host) that introduces the project, plays the replay GIF,
   shows a leaderboard snapshot from the dataset, and links to the live site, this repo and the
   dataset. It's the [`space/`](../space) folder, filled in by `npm run build-space`.

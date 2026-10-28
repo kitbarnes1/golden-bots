@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { TRUST_HUMANS_KEY } from '@gb/shared';
 import type {
   ActionRequest,
   CreateGameResponse,
@@ -123,6 +124,20 @@ describe('API', () => {
     // Honest Abe never lies, so there's nothing of his to be convinced by; the bluffer believes nobody.
     expect(honest.ownLiesRated).toBe(0);
     expect(all.rows.find((r) => r.key === 'mock/bluffer')!.liesBelieved).toBe(0);
+    // Who trusts whom: the same interview scores, pair by pair, and every usable rating given with a vote.
+    expect(ranked.trust).toEqual([]);
+    const fromInterviews = all.trust.filter((p) => p.source === 'interview');
+    expect(fromInterviews.reduce((s, p) => s + p.ratings, 0)).toBe(12);
+    expect(fromInterviews.reduce((s, p) => s + p.total, 0)).toBe(sum((r) => r.trustGivenTotal));
+    const keys = new Set(all.rows.map((r) => r.key));
+    expect(all.trust.every((p) => keys.has(p.from) && keys.has(p.to))).toBe(true);
+    const voteScores = game.events.flatMap((e) => (e.type === 'trust' ? e.ratings.flatMap((r) => (r.trust === null ? [] : [r.trust])) : []));
+    expect(voteScores.length).toBeGreaterThan(0);
+    const fromVotes = all.trust.filter((p) => p.source === 'vote');
+    expect(fromVotes.reduce((s, p) => s + p.ratings, 0)).toBe(voteScores.length);
+    expect(fromVotes.reduce((s, p) => s + p.total, 0)).toBe(voteScores.reduce((s, n) => s + n, 0));
+    // Two Honest Abes: one rated the other.
+    expect(all.trust.some((p) => p.from === 'mock/honest' && p.to === 'mock/honest')).toBe(true);
   });
 
   it('rejects bad lineups and AI seats without an API key', async () => {
@@ -268,6 +283,10 @@ describe('API', () => {
     expect([kit.beliefs, kit.voteTrustGivenScores]).toEqual([0, 0]);
     expect(kit.voteTrustReceivedScores).toBeGreaterThanOrEqual(3);
     expect((await board('')).rows).toEqual(withHumans.rows.filter((r) => r.kind !== 'human'));
+    // So does the trust grid, where the human is rated as "humans" (they're never asked to rate).
+    expect((await board('')).trust.some((p) => p.to === TRUST_HUMANS_KEY)).toBe(false);
+    expect(withHumans.trust.some((p) => p.to === TRUST_HUMANS_KEY)).toBe(true);
+    expect(withHumans.trust.some((p) => p.from === TRUST_HUMANS_KEY)).toBe(false);
     // Chat is rejected once the game is over.
     const late = await app.inject({ method: 'POST', url: `/api/games/${id}/chat`, headers: { 'x-player-token': playerToken! }, payload: { text: 'hi' } });
     expect(late.statusCode).toBe(409);
