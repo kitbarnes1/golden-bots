@@ -101,6 +101,21 @@ export interface LeaderboardRow {
   /** Trust scores the other players gave them in theirs. */
   trustReceivedScores: number;
   trustReceivedTotal: number;
+  /** With each vote, AIs privately say whether they believe each other player's claim: how many calls, and how many matched the truth. */
+  beliefs: number;
+  beliefsRight: number;
+  /** The calls they made on claims that were false, and how many of those they believed (fooled). */
+  liesRated: number;
+  liesBelieved: number;
+  /** The calls the others made on their own false claims, and how many believed them (convincing). */
+  ownLiesRated: number;
+  ownLiesBelieved: number;
+  /** Trust scores (1 to 5) they gave the other players with each vote: how many, and their total. */
+  voteTrustGivenScores: number;
+  voteTrustGivenTotal: number;
+  /** Trust scores the other players gave them with theirs. */
+  voteTrustReceivedScores: number;
+  voteTrustReceivedTotal: number;
   /** For AI models: who made it, where, whether the weights are open, and when it came out. */
   facts?: ModelFacts;
   /** For a group of contestants (by creator, country...): the ones in it. */

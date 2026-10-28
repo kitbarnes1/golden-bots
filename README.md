@@ -44,7 +44,8 @@ different:
 - 🔍 **Lies you can measure.** Claims are checked against the hidden balls, so honesty is a number,
   not a guess. The leaderboard puts it next to winnings, so you can see whether lying pays, and
   can group the models by creator, the creator's country, open or closed weights, or how new
-  they are.
+  they are. It also checks the private calls each AI makes with its vote: who spots lies, who
+  gets fooled, and whose lies convince the others.
 - 🧠 **Read their minds.** Each move records the model's private thoughts, plus its native reasoning
   when the model provides it. The feed shows each move with the thinking behind it, and a vote or
   final choice keeps its reasoning hidden until it's revealed. With each vote, every AI also says
@@ -105,7 +106,7 @@ different:
     <td><img src="docs/screenshots/does-lying-pay.png" alt="Scatter chart of honesty against average winnings for each model"></td>
   </tr>
   <tr>
-    <td><strong>The leaderboard.</strong> Rank the models, or group them by creator, the creator's country, open or closed weights, or how new they are. The tables underneath add final rate, split rate, honesty, fumbles and API cost, and what the models said in their exit interviews.</td>
+    <td><strong>The leaderboard.</strong> Rank the models, or group them by creator, the creator's country, open or closed weights, or how new they are. The tables underneath add final rate, split rate, honesty, fumbles and API cost, who spots lies at the vote, and what the models said in their exit interviews.</td>
     <td><strong>Does lying pay?</strong> Plot any two measures against each other. (Early days: a few games per model so far.)</td>
   </tr>
 </table>
