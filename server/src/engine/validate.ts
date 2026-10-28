@@ -6,6 +6,7 @@ import {
   type DecisionPoint,
   type InterviewAnswers,
   type TrustRating,
+  type VoteRating,
 } from '@gb/shared';
 
 export const MAX_SAY_LENGTH = 600;
@@ -78,7 +79,10 @@ export function validateResponse(request: ActionRequest, raw: unknown): Validati
       if (typeof target !== 'number' || !request.candidates.includes(target)) {
         return fail('target must be one of the listed players.');
       }
-      return { ok: true, value: { kind: request.kind, target } };
+      if (request.kind === 'tie_decide') return { ok: true, value: { kind: 'tie_decide', target } };
+      // The ratings are an aside: unusable ones are null, and never make the vote fail.
+      const ratings = voteRatings(r.ratings, request.candidates);
+      return { ok: true, value: { kind: 'vote', target, ...(ratings ? { ratings } : {}) } };
     }
     case 'pick': {
       const index = typeof r.index === 'string' ? Number(r.index) : r.index;
@@ -136,6 +140,16 @@ function trustRatings(value: unknown, others: number[]): TrustRating[] | null {
   }
   const ratings = [...bySeat].sort(([a], [b]) => a - b).map(([seat, score]) => ({ seat, score }));
   return ratings.length ? ratings : null;
+}
+
+/** One rating per candidate, in their order, with nulls for what's missing or unusable; null if none of it is usable. */
+function voteRatings(value: unknown, candidates: number[]): VoteRating[] | null {
+  const given = Array.isArray(value) ? value.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object') : [];
+  const ratings = candidates.map((seat) => {
+    const r = given.find((g) => g.seat === seat);
+    return { seat, believes: yesNo(r?.believes), trust: score1to5(r?.trust) };
+  });
+  return ratings.some((r) => r.believes !== null || r.trust !== null) ? ratings : null;
 }
 
 /** true/false, or "yes"/"no" in words. */

@@ -9,6 +9,7 @@ import {
   type ClaimValue,
   type GameEvent,
   type MockStrategy,
+  type VoteRating,
 } from '@gb/shared';
 import { isRepeat } from '../engine/engine.js';
 import { mulberry32, pickOne, type Rng } from '../engine/rng.js';
@@ -50,6 +51,8 @@ const sleep = (ms: number, signal: AbortSignal) =>
 
 export class MockAgent implements Agent {
   private readonly rng: Rng;
+  /** For the private ratings with a vote, so asking for them doesn't change how a seeded mock plays. */
+  private readonly ratingRng: Rng;
   private readonly style: Style;
 
   constructor(
@@ -60,6 +63,7 @@ export class MockAgent implements Agent {
     const id = strategy.replace(/^mock\//, '');
     this.style = id === 'honest' || id === 'bluffer' ? id : 'chaos';
     this.rng = mulberry32(seed);
+    this.ratingRng = mulberry32(seed ^ 0x7a57);
   }
 
   async act(request: ActionRequest, ctx: AgentContext, meta: ActMeta): Promise<AgentResult> {
@@ -235,9 +239,23 @@ export class MockAgent implements Agent {
   private vote(kind: 'vote' | 'tie_decide', candidates: number[], ctx: AgentContext): AgentResult {
     const target = this.style === 'chaos' ? pickOne(candidates, this.rng) : this.weakest(candidates, ctx);
     return {
-      response: { target },
+      response: { target, ...(kind === 'vote' ? { ratings: this.ratings(candidates, ctx) } : {}) },
       thoughts: `${ctx.players[target]?.name} looks like the weakest link.${kind === 'tie_decide' ? ' Breaking the tie.' : ''}`,
     };
+  }
+
+  /**
+   * Private ratings with a vote. The honest bot believes a claim unless it sounds too good or
+   * that player was caught lying before; the bluffer assumes everyone is at it; chaos guesses.
+   */
+  private ratings(candidates: number[], ctx: AgentContext): VoteRating[] {
+    const caught = new Set(ctx.events.flatMap((e) => (e.type === 'back_rows_revealed' ? e.rows.filter((r) => !r.truthful).map((r) => r.seat) : [])));
+    return candidates.map((seat) => {
+      if (this.style === 'chaos') return { seat, believes: this.ratingRng() < 0.5, trust: 1 + Math.floor(this.ratingRng() * 5) };
+      if (this.style === 'bluffer') return { seat, believes: false, trust: 1 };
+      const believes = !caught.has(seat) && claimTotal(ctx.claims[seat] ?? []) < 30_000;
+      return { seat, believes, trust: caught.has(seat) ? 1 : believes ? 4 : 2 };
+    });
   }
 
   /** The candidate whose visible + claimed money is lowest. */

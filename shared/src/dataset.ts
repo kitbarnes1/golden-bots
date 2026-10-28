@@ -2,7 +2,7 @@ import type { GameDetail } from './api.js';
 import { cashTotal, claimIsTruthful, claimTotal } from './balls.js';
 import type { GameEvent } from './events.js';
 import { pairThoughts, type ThoughtEvent } from './thoughts.js';
-import type { Ball, ClaimValue, DecisionPoint, FinalChoice, FinalOutcome, GameOptions, Stage } from './types.js';
+import type { Ball, ClaimValue, DecisionPoint, FinalChoice, FinalOutcome, GameOptions, Stage, VoteRating } from './types.js';
 
 // The public dataset: finished games turned into flat rows that load straight
 // into Hugging Face `datasets`, pandas or DuckDB. Every row has every field
@@ -72,6 +72,21 @@ export interface DatasetTrust {
   /** null for a human. */
   model: string | null;
   score: number;
+  /** Whether everything that player claimed, in the rounds the interviewee played, was true. */
+  truthful: boolean | null;
+}
+
+/** Said privately with a vote, about one other player still in, next to the truth. */
+export interface DatasetVoteRating {
+  seat: number;
+  /** null for a human. */
+  model: string | null;
+  /** Did they believe this player's back-row claim? */
+  believed: boolean | null;
+  /** How much they trusted this player, 1 (not at all) to 5 (completely). */
+  trust: number | null;
+  /** Whether this player's claim that round was really true (nobody knew at the vote). */
+  truthful: boolean | null;
 }
 
 /** Exit interview answers (what they said to the audience is the row's `say`). */
@@ -151,6 +166,8 @@ export interface MoveRow {
   /** Votes and tie-breaks: whether the target's claim that round was true (nobody knew until after the vote), and whether the target went out. */
   target_truthful: boolean | null;
   target_out: boolean | null;
+  /** Votes: what they privately made of each other player still in. */
+  ratings: DatasetVoteRating[] | null;
   /** Bin or Win: which way they picked, and the ball. */
   pick: 'bin' | 'win' | null;
   ball: DatasetBall | null;
@@ -212,6 +229,9 @@ export const MOVE_FEATURES: Record<keyof MoveRow, Feature> = {
   target_model: 'string',
   target_truthful: 'bool',
   target_out: 'bool',
+  ratings: {
+    list: { seat: 'int64', model: 'string', believed: 'bool', trust: 'int64', truthful: 'bool' } satisfies Record<keyof DatasetVoteRating, Feature>,
+  },
   pick: 'string',
   ball: BALL_FEATURE,
   choice: 'string',
@@ -230,7 +250,7 @@ export const MOVE_FEATURES: Record<keyof MoveRow, Feature> = {
     why: 'string',
     trust: 'int64',
     same_again: 'bool',
-    trust_each: { list: { seat: 'int64', model: 'string', score: 'int64' } satisfies Record<keyof DatasetTrust, Feature> },
+    trust_each: { list: { seat: 'int64', model: 'string', score: 'int64', truthful: 'bool' } satisfies Record<keyof DatasetTrust, Feature> },
   } satisfies Record<keyof DatasetInterview, Feature>,
   interview_checks: {
     lied: 'bool',
@@ -374,8 +394,11 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
   /** Votes against each seat in each round's vote, by "<stage>:<seat>" (tie-breaks not included). */
   const roundVotes = new Map<string, number>();
   const out = new Map<string, number>();
+  /** Each AI's private ratings with its vote, by "<stage>:<seat>". */
+  const voteRatings = new Map<string, VoteRating[]>();
   for (const e of events) {
     if (e.type === 'round_started') for (const d of e.dealt) fronts.set(`${e.stage}:${d.seat}`, d.front);
+    else if (e.type === 'trust') voteRatings.set(`${e.stage}:${e.seat}`, e.ratings);
     else if (e.type === 'back_row') backs.set(`${e.stage}:${e.seat}`, e.back);
     else if (e.type === 'eliminated') {
       truth.set(`${e.stage}:${e.seat}`, e.truthful);
@@ -399,6 +422,11 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
     target_truthful: truth.get(`${stage}:${seat}`) ?? null,
     target_out: out.get(stage) === seat,
   });
+  /** Whether everything a player claimed, up to the end of `stage`, was true; null if they hadn't claimed by then. */
+  const truthfulUpTo = (seat: number, stage: Stage) => {
+    const known = (stage === 'r1' ? ['r1'] : ['r1', 'r2']).flatMap((s) => truth.get(`${s}:${seat}`) ?? []);
+    return known.length ? known.every(Boolean) : null;
+  };
   const payout = (seat: number) => detail.players[seat]?.winnings ?? 0;
   const topWinnings = Math.max(0, ...detail.players.map((p) => p.winnings));
 
@@ -447,6 +475,7 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
       target_model: null,
       target_truthful: null,
       target_out: null,
+      ratings: null,
       pick: null,
       ball: null,
       choice: null,
@@ -465,7 +494,18 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
       latency_ms: t?.usage?.latencyMs ?? null,
     });
   };
-  const vote = (e: GameEvent, stage: 'r1' | 'r2', seat: number, voted: number, key: string) => add(e, seat, stage, 'vote', key, target(stage, voted));
+  const vote = (e: GameEvent, stage: 'r1' | 'r2', seat: number, voted: number, key: string) =>
+    add(e, seat, stage, 'vote', key, {
+      ...target(stage, voted),
+      ratings:
+        voteRatings.get(`${stage}:${seat}`)?.map((r) => ({
+          seat: r.seat,
+          model: who(r.seat).model,
+          believed: r.believes,
+          trust: r.trust,
+          truthful: truth.get(`${stage}:${r.seat}`) ?? null,
+        })) ?? null,
+    });
 
   for (const e of events) {
     switch (e.type) {
@@ -536,7 +576,8 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
       case 'interview': {
         const a = e.answers;
         const wentOut = detail.players[e.seat]?.eliminatedStage;
-        add(e, e.seat, e.when === 'final' || !wentOut ? 'final' : wentOut, 'interview', `${e.seq}`, {
+        const stage = e.when === 'final' || !wentOut ? 'final' : wentOut;
+        add(e, e.seat, stage, 'interview', `${e.seq}`, {
           say: text(a.say),
           ...(e.when === 'final' ? opponentOf(e.seat) : {}),
           interview: {
@@ -551,7 +592,7 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
             why: text(a.why),
             trust: a.trust ?? null,
             same_again: a.sameAgain ?? null,
-            trust_each: a.trustEach?.map((t) => ({ seat: t.seat, model: who(t.seat).model, score: t.score })) ?? null,
+            trust_each: a.trustEach?.map((t) => ({ seat: t.seat, model: who(t.seat).model, score: t.score, truthful: truthfulUpTo(t.seat, stage) })) ?? null,
           },
           interview_checks: checkInterview(e, events, reveal, payout, topWinnings),
         });

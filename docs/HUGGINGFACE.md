@@ -29,6 +29,7 @@ over). No login, no admin data and no keys are involved.
   played are happy for their chat to be published.
 - Games with scripted mock bots are left out (they're for testing).
 - Exit interviews are only saved for games played from 28 October 2026, so older games have none.
+  The private ratings with each vote (`ratings`) are newer still, so older games have them null.
 
 The dataset card (`dataset/README.md`) is written by the script too: what every field means, how
 the data was made, and its limits.

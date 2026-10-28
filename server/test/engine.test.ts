@@ -391,10 +391,11 @@ describe('GameEngine', () => {
     const { events } = await play(21, [spy]);
     for (const e of ofType(events, 'back_row')) expect(e.vis).toEqual({ seats: [e.seat] });
     for (const e of ofType(events, 'thoughts')) expect(e.vis).toEqual({ seats: [e.seat] });
+    for (const e of ofType(events, 'trust')) expect(e.vis).toEqual({ seats: [e.seat] });
     for (const ctx of seen) {
       for (const e of ctx.events) {
         expect(canSee(e, { seat: 0, omniscient: false })).toBe(true);
-        if (e.type === 'back_row' || e.type === 'thoughts') expect(e.seat).toBe(0);
+        if (e.type === 'back_row' || e.type === 'thoughts' || e.type === 'trust') expect(e.seat).toBe(0);
       }
       if (ctx.stage === 'bow' && ctx.board) {
         // Face-down balls are hidden from the finalists.
@@ -852,6 +853,66 @@ describe('exit interviews', () => {
     const gone = validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2, 3], others: [1, 2, 3] }, { sawItComing: true, winnerPick: 1 });
     expect(gone).toMatchObject({ ok: true, value: { answers: { sawItComing: true, winnerPick: null, claimsTrue: null, trustEach: null } } });
     expect(validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2], others: [1, 2, 3] }, { hello: 1 }).ok).toBe(false);
+  });
+});
+
+describe('trust ratings with each vote', () => {
+  const quick = { chatSeconds: 0, reflectSeconds: 0, finalChatSeconds: 0, readAtMyPace: false };
+
+  it('has each AI rate every other player still in with its vote, privately', async () => {
+    const { events } = await play(23);
+    const trust = ofType(events, 'trust');
+    // Everyone votes in round 1, and the three left in round 2.
+    expect(trust.map((t) => t.stage)).toEqual(['r1', 'r1', 'r1', 'r1', 'r2', 'r2', 'r2']);
+    for (const t of trust) {
+      const dealt = ofType(events, 'round_started').find((r) => r.stage === t.stage)!.dealt.map((d) => d.seat);
+      expect(t.ratings.map((r) => r.seat)).toEqual(dealt.filter((s) => s !== t.seat));
+      for (const r of t.ratings) {
+        expect(typeof r.believes).toBe('boolean');
+        expect([1, 2, 3, 4, 5]).toContain(r.trust);
+      }
+      // Rated before the vote is cast, and kept to the voter.
+      expect(events.findIndex((e) => e.type === 'vote_cast' && e.stage === t.stage && e.seat === t.seat)).toBeGreaterThan(t.seq);
+      expect(t.vis).toEqual({ seats: [t.seat] });
+    }
+    // Nothing of it reaches anyone's prompt, their own included.
+    for (const seat of [0, 1, 2, 3]) {
+      const seen = events.filter((e) => canSee(e, { seat, omniscient: false }));
+      expect(seen.filter((e) => e.type === 'trust').every((e) => e.seat === seat)).toBe(true);
+      expect(transcript(seen, seat, players)).toBe(transcript(seen.filter((e) => e.type !== 'trust'), seat, players));
+    }
+  });
+
+  it('takes the vote whatever the ratings are like, without a fumble', async () => {
+    const vote =
+      (ratings: (candidates: number[]) => unknown): Script =>
+      (req) =>
+        req.kind === 'vote' ? { target: req.candidates[0], ratings: ratings(req.candidates) } : undefined;
+    const { events, result } = await play(24, [
+      vote(([a]) => [{ seat: a, believes: 'maybe', trust: 'lots' }]), // nothing usable
+      vote(() => undefined), // none at all
+      vote(([a]) => [{ seat: a, believes: 'yes', trust: 9 }]), // one of three
+    ]);
+    expect(ofType(events, 'agent_error').filter((e) => e.action === 'vote')).toHaveLength(0);
+    expect(result.stats.map((s) => s.invalidResponses)).toEqual([0, 0, 0, 0]);
+    const trust = ofType(events, 'trust');
+    expect(trust.filter((t) => t.seat === 0 || t.seat === 1)).toHaveLength(0);
+    expect(trust.find((t) => t.seat === 2 && t.stage === 'r1')!.ratings).toEqual([
+      { seat: 0, believes: true, trust: 5 },
+      { seat: 1, believes: null, trust: null },
+      { seat: 3, believes: null, trust: null },
+    ]);
+  });
+
+  it("doesn't ask humans, even when autopilot votes for them", async () => {
+    const events: GameEvent[] = [];
+    const agents: Agent[] = players.map((p) => (p.seat === 3 ? new HumanAgent(new MockAgent('mock/honest', 3), 1) : new MockAgent('mock/honest', 60 + p.seat)));
+    await new GameEngine({ players, agents, options: options(60, quick), emit: (e) => events.push(e) }).run();
+    const trust = ofType(events, 'trust');
+    expect(trust.length).toBeGreaterThanOrEqual(3);
+    expect(trust.some((t) => t.seat === 3)).toBe(false);
+    // Everyone else still rates the human.
+    expect(trust.filter((t) => t.stage === 'r1').every((t) => t.ratings.some((r) => r.seat === 3))).toBe(true);
   });
 });
 

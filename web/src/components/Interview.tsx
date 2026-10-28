@@ -95,7 +95,8 @@ export function InterviewAnswers({ event, events, who }: { event: InterviewEvent
   );
 }
 
-function Trust({ score }: { score: number }) {
+/** A 1 to 5 trust score as dots. */
+export function Trust({ score }: { score: number }) {
   return (
     <span className="iv__trust" aria-label={`${score} out of 5`} title={`${score} out of 5`}>
       {'●'.repeat(score)}

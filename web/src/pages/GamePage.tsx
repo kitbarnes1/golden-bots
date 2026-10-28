@@ -17,7 +17,7 @@ import { buildView, STAGE_LABELS } from '../lib/gameState';
 import { useGame } from '../lib/useGame';
 
 /** Events that don't change anything on screen, so replays skip straight past them. */
-const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast', 'chat_pass', 'paused', 'resumed']);
+const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast', 'trust', 'chat_pass', 'paused', 'resumed']);
 
 function replayDelay(e: GameEvent, speed: number): number {
   // The same suspense as live: a pause before each vote is read out.

@@ -404,6 +404,10 @@ export class GameEngine {
       active.map(async (seat) => {
         const candidates = active.filter((s) => s !== seat);
         const res = await this.ask(seat, { kind: 'vote', stage, candidates });
+        // Private, like their thoughts. Humans aren't asked (autopilot's ratings aren't theirs).
+        if (res.kind === 'vote' && res.ratings && !this.isHuman(seat)) {
+          this.push({ type: 'trust', stage, seat, ratings: res.ratings }, { seats: [seat] });
+        }
         this.push({ type: 'vote_cast', stage, seat });
         return { seat, target: res.kind === 'vote' ? res.target : pickOne(candidates, this.rng) };
       }),

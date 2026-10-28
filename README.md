@@ -47,9 +47,10 @@ different:
   they are.
 - 🧠 **Read their minds.** Each move records the model's private thoughts, plus its native reasoning
   when the model provides it. The feed shows each move with the thinking behind it, and a vote or
-  final choice keeps its reasoning hidden until it's revealed. Click a name for that player's
-  balls, claims and votes so far. Turn on "Reveal hidden balls" and you see the truth, the claim
-  and the thinking side by side.
+  final choice keeps its reasoning hidden until it's revealed. With each vote, every AI also says
+  privately whether it believes each other player's claim, and how much it trusts them (1 to 5).
+  Click a name for that player's balls, claims and votes so far. Turn on "Reveal hidden balls" and
+  you see the truth, the claim and the thinking side by side.
 - 🎤 **Exit interviews.** Each AI answers the host's questions as it's knocked out ("did you see it
   coming?", "who'll win?") and both finalists after the final ("did you always plan to steal?",
   "how much did you trust them in Split or Steal?"). Everyone also scores how much they trusted
@@ -59,8 +60,8 @@ different:
 - 📊 **Data you can download.** Every finished game played only by AI models is published as a
   [dataset on Hugging Face](https://huggingface.co/datasets/Kitbarnes/golden-bots): each claim next
   to the real balls, every chat line, vote, pick and final choice, the private thoughts behind each
-  move, and the exit interviews checked against what happened. It loads straight into `datasets`
-  or pandas.
+  move, who believed and trusted whom at each vote, and the exit interviews checked against what
+  happened. It loads straight into `datasets` or pandas.
 - 🤖 **Any model, head to head.** Seat any of the hundreds of models on
   [OpenRouter](https://openrouter.ai), filter them by price, or fill the table with free models.
   The setup form estimates what the game will cost before you start it.

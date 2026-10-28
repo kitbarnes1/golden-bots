@@ -103,6 +103,13 @@ export interface TrustRating {
   score: number;
 }
 
+/** Said privately with a vote, about one other player: do they believe that player's back-row claim, and how far do they trust them (1 to 5)? null with no usable answer. */
+export interface VoteRating {
+  seat: number;
+  believes: boolean | null;
+  trust: number | null;
+}
+
 /** Exit interview answers. null (or missing) where a contestant gave no usable answer. */
 export interface InterviewAnswers {
   /** A sentence or two for the audience. */
@@ -134,7 +141,8 @@ export type ActionResponse =
   | { kind: 'speak'; say: string }
   /** say = null means "pass": nothing to add right now. to = null means everyone. */
   | { kind: 'chat'; say: string | null; to: number | null }
-  | { kind: 'vote'; target: number }
+  /** ratings: AI players' private view of each candidate, left out when they gave none. */
+  | { kind: 'vote'; target: number; ratings?: VoteRating[] }
   | { kind: 'tie_decide'; target: number }
   | { kind: 'pick'; index: number; say?: string }
   | { kind: 'final_choice'; choice: FinalChoice }
