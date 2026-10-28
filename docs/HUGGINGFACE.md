@@ -11,6 +11,8 @@ Two things can go on [Hugging Face](https://huggingface.co):
 
 A GitHub Actions workflow, [`huggingface.yml`](../.github/workflows/huggingface.yml), builds both
 and pushes them. It only runs when you start it, and does nothing until the steps below are done.
+The live demo publishes to [this dataset](https://huggingface.co/datasets/Kitbarnes/golden-bots)
+and [this Space](https://huggingface.co/spaces/Kitbarnes/golden-bots).
 
 The Space doesn't run the game itself. The app needs an always-on disk for its SQLite database and
 an OpenRouter key, and a public copy would let anyone spend your OpenRouter credit. A free Space
