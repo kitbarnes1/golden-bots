@@ -180,12 +180,47 @@ games = load_dataset("${datasetId}", "games", split="train")
 
 Or with pandas: \`pd.read_json("hf://datasets/${datasetId}/moves.jsonl", lines=True)\`.
 
-For example, to see how often each model lied about its back row:
+## Questions it can answer
 
 \`\`\`python
-claims = moves.to_pandas().query("move == 'claim'")
-claims.groupby("model")["truthful"].agg(["count", "mean"]).sort_values("mean")
+m = moves.to_pandas()
+claims = m[m.move == "claim"]
+votes = m[m.move.isin(["vote", "tie_decide"])]
+interviews = m[m.move == "interview"]
+
+# Who lies? The share of each model's back-row claims that were true.
+claims.groupby("model").truthful.agg(["count", "mean"]).sort_values("mean")
+
+# When do they lie? With a Killer to hide, after being caught out in round 1, or late in the order.
+claims.groupby(claims.back_killers > 0).truthful.mean()
+claims.groupby("lied_before").truthful.mean()
+claims.groupby("claim_order").truthful.mean()
+
+# How do they lie? Cash added, and Killers hidden.
+(claims.claim_total - claims.back_total).describe()
+(claims.back_killers - claims.claim_killers).clip(lower=0).sum()
+
+# Does lying pay? How often liars and truth-tellers went out that round.
+claims.groupby("truthful").voted_out.mean()
+
+# Can they spot a liar? How often each model's vote went against someone who was lying.
+votes.assign(at_liar=votes.target_truthful == False).groupby("model").at_liar.mean()
+
+# Do they own up afterwards? Their interview answer, checked against their claims.
+interviews.interview_checks.str.get("claims_verdict").value_counts()
+
+# Who trusts whom? Each interviewee's trust (1 to 5) in every other player over the game, model by model.
+rated = interviews.assign(rated=interviews.interview.str.get("trust_each")).explode("rated").dropna(subset=["rated"])
+rated.assign(rated_model=rated.rated.str.get("model"), score=rated.rated.str.get("score").astype(float)).pivot_table(
+    index="model", columns="rated_model", values="score", aggfunc="mean")
+
+# In Split or Steal: a finalist's trust in the other (1 to 5), and what the other then did.
+finals = interviews[interviews.opponent_model.notna()]
+finals.assign(trust=finals.interview.str.get("trust"))[["model", "opponent_model", "trust", "opponent_choice"]]
 \`\`\`
+
+The private \`thoughts\` sit next to every one of these moves, so each number can be read alongside
+what the model was thinking at the time, including whether it meant what it said in its interview.
 
 ## How a game works
 
@@ -219,17 +254,23 @@ and if they can't, the tied players draw from the machine and whoever draws a Ki
 | \`seat\`, \`player\`, \`kind\`, \`model\` | Who moved: seat 0 to 3, the name the others saw, \`ai\` or \`human\`, and the OpenRouter model id (null for a human). |
 | \`move\` | \`claim\`, \`chat\` (open floor), \`pass\` (stayed quiet in a chat), \`speak\` (a tie-break plea or a reaction to the final), \`vote\`, \`tie_decide\`, \`pick\` (Bin or Win), \`final_choice\` or \`interview\`. |
 | \`say\` | What they said out loud with the move. |
-| \`to_seat\` | For a chat line aimed at one player, who it was aimed at. |
+| \`to_seat\`, \`to_model\` | For a chat line aimed at one player, who it was aimed at. |
 | \`after_vote\` | For chat moves: true in the chat after a vote, false in the one before it. |
 | \`front\`, \`back\`, \`claim\` | For claims: the front row everyone saw, the real hidden back row, and what they said was on it. Each ball is \`{"kind": "cash" or "killer", "value": pounds, or null for a Killer}\`. Order within a row doesn't matter. |
 | \`truthful\` | For claims: the claim matched the back row exactly. |
+| \`front_total\`, \`front_killers\`, \`back_total\`, \`back_killers\`, \`claim_total\`, \`claim_killers\` | For claims: the cash (in pounds) and the number of Killers on the front row, the real back row and the claim. \`claim_total - back_total\` is how much a lie added; \`back_killers - claim_killers\` is how many Killers it hid. |
+| \`claim_order\` | For claims: 1 for the first to claim in the round, so later claimers had heard the others first. |
+| \`lied_before\` | For round 2 claims: their round 1 claim had been shown to be false, in front of everyone. |
+| \`voted_out\`, \`votes_against\` | For claims: whether they went out that round (tie-breaks included), and how many votes they got in its vote. |
 | \`target_seat\`, \`target_model\` | For votes and tie-breaks: who they voted to throw out. |
+| \`target_truthful\`, \`target_out\` | For votes and tie-breaks: whether the target's claim that round was true (nobody knew until after the vote), and whether the target went out. |
 | \`pick\`, \`ball\` | For Bin or Win: \`bin\` or \`win\`, and the ball it turned out to be. |
 | \`choice\` | For the final: \`split\` or \`steal\`. |
-| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` (the seat they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (finalists: 1 to 5, in the other finalist in Split or Steal), \`same_again\`, and \`trust_each\` (everyone: how much they trusted each of the other players over the game, as \`{"seat", "model", "score"}\` with scores 1 to 5). |
+| \`opponent_seat\`, \`opponent_model\`, \`opponent_choice\` | For final choices and the finalists' interviews: the other finalist, and what they chose. |
+| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` and \`winner_pick_model\` (who they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (finalists: 1 to 5, in the other finalist in Split or Steal), \`same_again\`, and \`trust_each\` (everyone: how much they trusted each of the other players over the game, as \`{"seat", "model", "score"}\` with scores 1 to 5). |
 | \`interview_checks\` | Their answers checked against the game: \`lied\` (made a false claim), \`claims_verdict\` (\`truthful\`, \`lied_about_it\`, \`owned_up\` or \`false_confession\`), \`winner_pick_right\`, \`final_choice\` and \`stuck_to_plan\`. |
 | \`fallback\` | The model's reply was unusable, so the game made this move for it (a truthful claim, a pass, or a random vote, pick or final choice). Leave these out when judging a model's decisions. |
-| \`thoughts\` | Private: the note the model wrote about why it made this move. The other players never saw it. |
+| \`thoughts\` | Private: the note the model wrote about why it made this move, or, for an interview, what it was thinking as it answered. The other players never saw it. |
 | \`reasoning\` | Private: the model's own reasoning trace, where the provider returned one. |
 | \`prompt_tokens\`, \`completion_tokens\`, \`cost_usd\`, \`latency_ms\` | What the model call for this move cost. |
 
@@ -277,7 +318,11 @@ Games with scripted test bots are left out too. Nothing from the site's admin si
   A model id on OpenRouter can be served by different providers, and \`:free\` variants are
   rate-limited and may behave differently.
 - **Exit interviews are new.** They're only saved for games played from 28 October 2026, so older
-  games have none.
+  games have none, and the thinking behind the answers is only kept from late October 2026.
+- **Reported trust is new, and it's only what they say.** From 28 October 2026, every interviewee
+  rates how much they trusted each of the other players (\`trust_each\`), and the finalists also
+  rate each other in Split or Steal (\`trust\`). Earlier games only have the finalists' score. Trust
+  also shows in who votes for whom, who believes which claims, and what the finalists do with a deal.
 - **Using the text.** It was written by the models listed. If you plan to train a model on it,
   check each model provider's terms.
 

@@ -395,6 +395,7 @@ export function Feed({ events, players, showThoughts, reveal, viewerSeat, activi
               <span aria-hidden>🎤</span> Exit interview: {who(e.seat)}
             </div>
             <InterviewAnswers event={e} events={events} who={who} />
+            {mind(thoughtFor(key))}
           </div>,
         );
         break;
@@ -496,7 +497,7 @@ function Thought({ event, who, style, className = '' }: { event: ThoughtEvent; w
 }
 
 /** The thinking behind a move, tucked under it in the same card. */
-function MoveThought({ event }: { event: ThoughtEvent }) {
+export function MoveThought({ event }: { event: ThoughtEvent }) {
   return (
     <div className="feed__mind">
       <div className="feed__mind-head">

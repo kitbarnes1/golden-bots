@@ -1268,8 +1268,7 @@ textarea {
 /* One player's move: who and what first, then the thinking behind it, all in their colour. */
 .feed__turn {
   --seat: var(--blue);
-  border-left: 3px solid color-mix(in srgb, var(--seat) 70%, transparent);
-  padding: 2px 0 2px 10px;
+  padding: 2px 0;
   transition: opacity 0.2s ease;
 }
 .feed__turn + .feed__turn {
@@ -1357,7 +1356,6 @@ textarea {
   padding: 10px 14px;
   background: color-mix(in srgb, var(--seat) 10%, var(--bg-2));
   border: 1px solid color-mix(in srgb, var(--seat) 45%, transparent);
-  border-left: 4px solid var(--seat);
   border-radius: 12px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
   font-size: 0.86rem;
@@ -1445,7 +1443,6 @@ textarea {
 .feed__interview {
   --seat: var(--blue);
   border: 1px solid color-mix(in srgb, var(--seat) 40%, transparent);
-  border-left: 3px solid var(--seat);
   background: color-mix(in srgb, var(--seat) 6%, transparent);
   border-radius: 10px;
   padding: 8px 12px;
@@ -1513,9 +1510,18 @@ textarea {
 .exits__one {
   --seat: var(--blue);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--seat);
   border-radius: 10px;
   padding: 12px 14px;
+}
+.exits__one h3::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--seat);
+  margin-right: 8px;
+  vertical-align: 0.15em;
 }
 .exits__one h3 {
   margin: 0;
@@ -1860,7 +1866,6 @@ textarea {
     min-width: 0;
     background: var(--card);
     border: 1px solid var(--line);
-    border-left: 3px solid var(--seat);
     border-radius: 8px;
     padding: 5px 7px 6px;
     transition: opacity 0.3s ease;
@@ -1885,6 +1890,16 @@ textarea {
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+  }
+  .strip__name::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--seat);
+    margin-right: 5px;
+    vertical-align: 0.1em;
   }
   .strip__badge {
     flex: none;
@@ -1942,8 +1957,6 @@ textarea {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    border-left: 3px solid var(--seat);
-    padding-left: 6px;
   }
 }
 
