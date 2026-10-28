@@ -32,7 +32,9 @@ export const METRICS: Metric[] = [
   { key: 'plannedSteal', label: 'Planned to steal from the start (interview)', format: 'pct', value: (r) => per(r.plannedSteal, r.plansGiven) },
   { key: 'stuck', label: 'Stuck to their plan (interview)', format: 'pct', value: (r) => per(r.stuckToPlan, r.planChecks) },
   { key: 'again', label: 'Would choose the same again (interview)', format: 'pct', value: (r) => per(r.sameAgain, r.againAsked) },
-  { key: 'trust', label: 'Trust in the other finalist, 1–5 (interview)', format: 'num', value: (r) => per(r.trustTotal, r.trustScores) },
+  { key: 'trustGiven', label: 'Trusts the other players, 1–5 (interview)', format: 'num', value: (r) => per(r.trustGivenTotal, r.trustGivenScores) },
+  { key: 'trustReceived', label: 'Trusted by the other players, 1–5 (interview)', format: 'num', value: (r) => per(r.trustReceivedTotal, r.trustReceivedScores) },
+  { key: 'trust', label: 'Trust in the other finalist in Split or Steal, 1–5 (interview)', format: 'num', value: (r) => per(r.trustTotal, r.trustScores) },
 ];
 
 function format(v: number, f: Format, compact = false): string {

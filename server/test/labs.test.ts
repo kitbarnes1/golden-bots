@@ -44,6 +44,10 @@ function row(key: string, label: string, stats: Partial<LeaderboardRow> = {}, fa
     sameAgain: 0,
     trustScores: 0,
     trustTotal: 0,
+    trustGivenScores: 0,
+    trustGivenTotal: 0,
+    trustReceivedScores: 0,
+    trustReceivedTotal: 0,
     ...stats,
     ...(kind === 'ai' ? { facts: { ...modelFacts(key), ...facts } } : {}),
   };

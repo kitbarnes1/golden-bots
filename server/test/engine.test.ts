@@ -686,6 +686,23 @@ describe('exit interviews', () => {
     }
   });
 
+  it('asks everyone how much they trusted each other player, and totals what each gave and got', async () => {
+    const { events, result } = await play(23);
+    const interviews = ofType(events, 'interview');
+    expect(interviews).toHaveLength(4);
+    for (const i of interviews) {
+      // One score for each of the three others, whether they're still in or not.
+      expect(i.answers.trustEach!.map((t) => t.seat)).toEqual([0, 1, 2, 3].filter((s) => s !== i.seat));
+      for (const t of i.answers.trustEach!) expect(t.score).toBeGreaterThanOrEqual(1);
+    }
+    for (const s of result.stats) {
+      const given = interviews.find((i) => i.seat === s.seat)!.answers.trustEach!;
+      const got = interviews.flatMap((i) => i.answers.trustEach!.filter((t) => t.seat === s.seat));
+      expect([s.trustGiven, s.trustGivenCount]).toEqual([given.reduce((n, t) => n + t.score, 0), 3]);
+      expect([s.trustReceived, s.trustReceivedCount]).toEqual([got.reduce((n, t) => n + t.score, 0), 3]);
+    }
+  });
+
   it("keeps an AI model's answers, which its agent has already checked", async () => {
     // The real LLM agent, talking to a stand-in OpenRouter that answers like a model would.
     const client = {
@@ -800,16 +817,41 @@ describe('exit interviews', () => {
 
   it('reads loose answers sensibly', () => {
     const out = validateResponse(
-      { kind: 'interview', when: 'final', candidates: [], opponent: 1 },
-      { say: '  Well then  ', claimsTrue: 'No, I bluffed', planned: 'STEAL', decided: 'the second round', why: 'Money.', trust: '7', sameAgain: 'yes' },
+      { kind: 'interview', when: 'final', candidates: [], opponent: 1, others: [1, 2, 3] },
+      {
+        say: '  Well then  ',
+        claimsTrue: 'No, I bluffed',
+        planned: 'STEAL',
+        decided: 'the second round',
+        why: 'Money.',
+        trust: '7',
+        sameAgain: 'yes',
+        // Kept: one score each for the players asked about, 1 to 5, in seat order.
+        trustEach: [{ seat: 3, score: '4' }, { seat: 2, score: 9 }, { seat: 0, score: 3 }, { seat: 3, score: 1 }, { seat: 1, score: 'lots' }],
+      },
     );
     expect(out).toEqual({
       ok: true,
-      value: { kind: 'interview', answers: { say: 'Well then', claimsTrue: false, planned: 'steal', decided: 'r2', why: 'Money.', trust: 5, sameAgain: true } },
+      value: {
+        kind: 'interview',
+        answers: {
+          say: 'Well then',
+          claimsTrue: false,
+          planned: 'steal',
+          decided: 'r2',
+          why: 'Money.',
+          trust: 5,
+          sameAgain: true,
+          trustEach: [
+            { seat: 2, score: 5 },
+            { seat: 3, score: 4 },
+          ],
+        },
+      },
     });
-    const gone = validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2, 3] }, { sawItComing: true, winnerPick: 1 });
-    expect(gone).toMatchObject({ ok: true, value: { answers: { sawItComing: true, winnerPick: null, claimsTrue: null } } });
-    expect(validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2] }, { hello: 1 }).ok).toBe(false);
+    const gone = validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2, 3], others: [1, 2, 3] }, { sawItComing: true, winnerPick: 1 });
+    expect(gone).toMatchObject({ ok: true, value: { answers: { sawItComing: true, winnerPick: null, claimsTrue: null, trustEach: null } } });
+    expect(validateResponse({ kind: 'interview', when: 'eliminated', candidates: [2], others: [1, 2, 3] }, { hello: 1 }).ok).toBe(false);
   });
 });
 

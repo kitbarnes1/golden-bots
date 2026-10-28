@@ -110,9 +110,25 @@ export function interpret(
         decided: json.decided_when,
         why: json.why,
         trust: json.trust,
+        trustEach: trustByName(json.trust_each, request.others, players),
         sameAgain: json.same_again,
       };
   }
+}
+
+/**
+ * {"Name": 4, ...} (or a list of { name, score }) to [{ seat, score }]. Names that don't
+ * match a player are left for the check to drop.
+ */
+function trustByName(value: unknown, others: number[], players: PlayerInfo[]): { seat: number | undefined; score: unknown }[] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const pairs: [unknown, unknown][] = Array.isArray(value)
+    ? value.map((v) => {
+        const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+        return [o.name ?? o.player, o.score ?? o.trust];
+      })
+    : Object.entries(value);
+  return pairs.map(([who, score]) => ({ seat: resolvePlayer(who, others, players), score }));
 }
 
 /** Match a name (or seat number) given by a model to one of the candidate seats. */

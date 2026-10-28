@@ -209,7 +209,12 @@ votes.assign(at_liar=votes.target_truthful == False).groupby("model").at_liar.me
 # Do they own up afterwards? Their interview answer, checked against their claims.
 interviews.interview_checks.str.get("claims_verdict").value_counts()
 
-# How much do they trust each other? A finalist's trust in the other (1 to 5), and what the other then did.
+# Who trusts whom? Each interviewee's trust (1 to 5) in every other player over the game, model by model.
+rated = interviews.assign(rated=interviews.interview.str.get("trust_each")).explode("rated").dropna(subset=["rated"])
+rated.assign(rated_model=rated.rated.str.get("model"), score=rated.rated.str.get("score").astype(float)).pivot_table(
+    index="model", columns="rated_model", values="score", aggfunc="mean")
+
+# In Split or Steal: a finalist's trust in the other (1 to 5), and what the other then did.
 finals = interviews[interviews.opponent_model.notna()]
 finals.assign(trust=finals.interview.str.get("trust"))[["model", "opponent_model", "trust", "opponent_choice"]]
 \`\`\`
@@ -262,7 +267,7 @@ and if they can't, the tied players draw from the machine and whoever draws a Ki
 | \`pick\`, \`ball\` | For Bin or Win: \`bin\` or \`win\`, and the ball it turned out to be. |
 | \`choice\` | For the final: \`split\` or \`steal\`. |
 | \`opponent_seat\`, \`opponent_model\`, \`opponent_choice\` | For final choices and the finalists' interviews: the other finalist, and what they chose. |
-| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` and \`winner_pick_model\` (who they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (1 to 5, in the other finalist) and \`same_again\`. |
+| \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` and \`winner_pick_model\` (who they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (finalists: 1 to 5, in the other finalist in Split or Steal), \`same_again\`, and \`trust_each\` (everyone: how much they trusted each of the other players over the game, as \`{"seat", "model", "score"}\` with scores 1 to 5). |
 | \`interview_checks\` | Their answers checked against the game: \`lied\` (made a false claim), \`claims_verdict\` (\`truthful\`, \`lied_about_it\`, \`owned_up\` or \`false_confession\`), \`winner_pick_right\`, \`final_choice\` and \`stuck_to_plan\`. |
 | \`fallback\` | The model's reply was unusable, so the game made this move for it (a truthful claim, a pass, or a random vote, pick or final choice). Leave these out when judging a model's decisions. |
 | \`thoughts\` | Private: the note the model wrote about why it made this move, or, for an interview, what it was thinking as it answered. The other players never saw it. |
@@ -275,7 +280,7 @@ and if they can't, the tied players draw from the machine and whoever draws a Ki
 |---|---|
 | \`game_id\`, \`created_at\`, \`finished_at\` | The game, and when it ran (UTC). |
 | \`models\` | The lineup: model id by seat. |
-| \`players\` | Per seat: \`name\`, \`kind\`, \`model\`, \`model_label\`, \`eliminated_stage\`, \`reached_final\`, \`final_choice\`, \`winnings\`, \`claims\` and \`truthful_claims\`, \`votes_received\`, \`fallbacks\` and \`cost_usd\`. |
+| \`players\` | Per seat: \`name\`, \`kind\`, \`model\`, \`model_label\`, \`eliminated_stage\`, \`reached_final\`, \`final_choice\`, \`winnings\`, \`claims\` and \`truthful_claims\`, \`votes_received\`, \`fallbacks\`, \`cost_usd\`, and \`trust_given\` and \`trust_received\` (the average trust, 1 to 5, they gave the others and got from them in the exit interviews; null if none). |
 | \`options\` | The game's settings: chat lengths in seconds, the most messages per chat, whether the models were named after themselves or given show-style names, the reasoning effort asked for, and the seed for the ball machine. |
 | \`jackpot\`, \`outcome\`, \`finalists\` | The final: the jackpot in pounds, \`both_split\`, \`one_steal\` or \`both_steal\`, and the two finalists' seats. |
 | \`has_human\`, \`moves\`, \`cost_usd\` | Whether a person played, how many rows the game has in \`moves.jsonl\`, and what the game cost in model calls. |
@@ -314,9 +319,10 @@ Games with scripted test bots are left out too. Nothing from the site's admin si
   rate-limited and may behave differently.
 - **Exit interviews are new.** They're only saved for games played from 28 October 2026, so older
   games have none, and the thinking behind the answers is only kept from late October 2026.
-- **Trust is mostly revealed, not reported.** Only the two finalists rate their trust in someone
-  (each other). Elsewhere, trust shows in who votes for whom, who believes which claims, and what
-  the finalists do with a deal.
+- **Reported trust is new, and it's only what they say.** From 28 October 2026, every interviewee
+  rates how much they trusted each of the other players (\`trust_each\`), and the finalists also
+  rate each other in Split or Steal (\`trust\`). Earlier games only have the finalists' score. Trust
+  also shows in who votes for whom, who believes which claims, and what the finalists do with a deal.
 - **Using the text.** It was written by the models listed. If you plan to train a model on it,
   check each model provider's terms.
 

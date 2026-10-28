@@ -160,4 +160,8 @@ const SUMMED = [
   'sameAgain',
   'trustScores',
   'trustTotal',
+  'trustGivenScores',
+  'trustGivenTotal',
+  'trustReceivedScores',
+  'trustReceivedTotal',
 ] as const satisfies readonly (keyof LeaderboardRow)[];

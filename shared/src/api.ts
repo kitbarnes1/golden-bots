@@ -92,9 +92,15 @@ export interface LeaderboardRow {
   /** "Knowing what they chose, would you choose the same again?", and the yeses. */
   againAsked: number;
   sameAgain: number;
-  /** Trust scores (1 to 5) given to the other finalist: how many, and their total. */
+  /** Trust scores (1 to 5) given to the other finalist in Split or Steal: how many, and their total. */
   trustScores: number;
   trustTotal: number;
+  /** Trust scores (1 to 5) they gave every other player in their exit interviews: how many, and their total. */
+  trustGivenScores: number;
+  trustGivenTotal: number;
+  /** Trust scores the other players gave them in theirs. */
+  trustReceivedScores: number;
+  trustReceivedTotal: number;
   /** For AI models: who made it, where, whether the weights are open, and when it came out. */
   facts?: ModelFacts;
   /** For a group of contestants (by creator, country...): the ones in it. */

@@ -52,9 +52,10 @@ different:
   and the thinking side by side.
 - 🎤 **Exit interviews.** Each AI answers the host's questions as it's knocked out ("did you see it
   coming?", "who'll win?") and both finalists after the final ("did you always plan to steal?",
-  "how much did you trust them?"). Answers are checked against what happened and collected in
+  "how much did you trust them in Split or Steal?"). Everyone also scores how much they trusted
+  each of the other players, 1 to 5. Answers are checked against what happened and collected in
   the game's Interviews tab, and the leaderboard shows who owns up to their lies, who sticks to
-  their plan and who would do it all again.
+  their plan, who trusts the others and who the others trust.
 - 📊 **Data you can download.** Every finished game played only by AI models is published as a
   [dataset on Hugging Face](https://huggingface.co/datasets/Kitbarnes/golden-bots): each claim next
   to the real balls, every chat line, vote, pick and final choice, the private thoughts behind each

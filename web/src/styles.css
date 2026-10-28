@@ -1488,6 +1488,20 @@ textarea {
 .iv__trust-off {
   color: rgba(255, 255, 255, 0.15);
 }
+.iv__trust-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.iv__trust-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
 /* Everyone's exit interview, under the results */
 .exits {
   display: grid;
@@ -1689,6 +1703,11 @@ textarea {
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
+}
+/* Many short columns: the headings wrap rather than push the last ones off the side. */
+.lb--interviews th {
+  white-space: normal;
+  vertical-align: bottom;
 }
 .lb th button {
   background: none;

@@ -108,6 +108,15 @@ export class MockAgent implements Agent {
     );
     const chaos = this.style === 'chaos';
     const claimsTrue = chaos ? this.rng() < 0.5 : reveals.every(Boolean);
+    // Trust follows the reveals: anyone caught lying is trusted less (the bluffer trusts nobody much).
+    const caught = (seat: number) =>
+      ctx.events.some((e) =>
+        e.type === 'eliminated' ? e.seat === seat && !e.truthful : e.type === 'back_rows_revealed' && e.rows.some((r) => r.seat === seat && !r.truthful),
+      );
+    const trustEach = request.others.map((seat) => ({
+      seat,
+      score: chaos ? 1 + Math.floor(this.rng() * 5) : this.style === 'honest' ? (caught(seat) ? 2 : 4) : caught(seat) ? 1 : 3,
+    }));
     if (request.when === 'eliminated') {
       return {
         response: {
@@ -116,6 +125,7 @@ export class MockAgent implements Agent {
           sawItComing: chaos ? this.rng() < 0.5 : this.style === 'bluffer',
           winnerPick: request.candidates.length ? pickOne(request.candidates, this.rng) : null,
           differently: this.style === 'honest' ? 'Nothing. I would tell the truth again.' : 'Bluff a little less obviously.',
+          trustEach,
         },
         thoughts: 'Nothing left to lose, so I may as well be straight about it.',
       };
@@ -133,6 +143,7 @@ export class MockAgent implements Agent {
         why: mine === 'split' ? 'A promise is a promise.' : 'It was the only way to be sure of the money.',
         trust: chaos ? 1 + Math.floor(this.rng() * 5) : this.style === 'honest' ? (theirs === 'steal' ? 2 : 4) : 1,
         sameAgain: chaos ? this.rng() < 0.5 : true,
+        trustEach,
       },
       thoughts: 'The game is over; here is how it really went.',
     };

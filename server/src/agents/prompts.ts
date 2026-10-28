@@ -304,6 +304,8 @@ function interviewTask(request: Extract<ActionRequest, { kind: 'interview' }>, c
   const p = ctx.players;
   const candid =
     'Your game is over and nothing you say now can change anything, so answer honestly. The other contestants will not hear this.';
+  const others = request.others.map((s) => `"${name(p, s)}"`).join(', ');
+  const trustEach = `"trust_each": {"<exact name>": 1 to 5, ...} (how much you trusted each of the other players over the whole game, 1 = not at all, 5 = completely: one score each for ${others})`;
   if (request.when === 'eliminated') {
     const names = request.candidates.map((s) => `"${name(p, s)}"`).join(', ');
     return `EXIT INTERVIEW: you have been voted out and leave with nothing. On your way out, the host asks you a few questions. ${candid}
@@ -312,7 +314,8 @@ Respond with JSON: {"thoughts": "...",
  "saw_it_coming": true or false (did you expect to be voted out this time?),
  "claims_were_true": true or false (was everything you claimed about your back rows the truth?),
  "would_do_differently": "one short sentence",
- "will_win": "<exact name of the player you think will leave with the most money: one of ${names}>"}`;
+ "will_win": "<exact name of the player you think will leave with the most money: one of ${names}>",
+ ${trustEach}}`;
   }
   const reveal = ctx.events.findLast((e): e is Extract<GameEvent, { type: 'final_reveal' }> => e.type === 'final_reveal');
   const mine = reveal?.choices.find((c) => c.seat === ctx.seat)?.choice ?? 'split';
@@ -325,9 +328,10 @@ Respond with JSON: {"thoughts": "...",
  "planned_at_start": "SPLIT", "STEAL" or "UNDECIDED" (what you meant to choose in the final when the game began),
  "decided_when": one of "before the game", "round 1", "round 2", "bin or win", "final chat", "last moment" (when you made up your mind),
  "why": "what made you choose ${mine.toUpperCase()}, in a sentence",
- "trust": 1 to 5 (how much you trusted ${name(p, other)} at the end: 1 = not at all, 5 = completely),
+ "trust": 1 to 5 (how much you trusted ${name(p, other)} in Split or Steal: 1 = not at all, 5 = completely),
  "same_again": true or false (knowing what ${name(p, other)} chose, would you make the same choice again?),
- "claims_were_true": true or false (was everything you claimed about your back rows the truth?)}`;
+ "claims_were_true": true or false (was everything you claimed about your back rows the truth?),
+ ${trustEach}}`;
 }
 
 function truncate(text: string, max: number): string {

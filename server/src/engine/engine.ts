@@ -47,6 +47,12 @@ export interface PlayerStats {
   costUsd: number;
   /** Their exit interview, checked against what happened; null if they weren't interviewed. */
   interview: InterviewStats | null;
+  /** Trust scores (1–5) they gave the other players in their interview: the sum, and how many. */
+  trustGiven: number;
+  trustGivenCount: number;
+  /** Trust scores the other players gave them, in theirs. Humans aren't interviewed but can be rated. */
+  trustReceived: number;
+  trustReceivedCount: number;
 }
 
 export interface InterviewStats {
@@ -215,6 +221,10 @@ export class GameEngine {
         llmCalls: 0,
         costUsd: 0,
         interview: null,
+        trustGiven: 0,
+        trustGivenCount: 0,
+        trustReceived: 0,
+        trustReceivedCount: 0,
       },
     }));
     this.bank = shuffle(
@@ -421,7 +431,7 @@ export class GameEngine {
     const out = tied.length === 1 ? tied[0]! : await this.tieBreak(stage, tied);
     this.eliminate(stage, out);
     // Asked on the way out while the game carries on; the answers arrive when they're ready.
-    void this.interview(out, { kind: 'interview', when: 'eliminated', candidates: this.activeSeats() });
+    void this.interview(out, { kind: 'interview', when: 'eliminated', candidates: this.activeSeats(), others: this.othersThan(out) });
 
     // The players left talk over the result and the reveal. Whoever just went doesn't
     // join: a knocked-out human can see everyone's secrets now.
@@ -658,7 +668,9 @@ export class GameEngine {
       });
     }
     await Promise.all(
-      order.map((seat) => this.interview(seat, { kind: 'interview', when: 'final', candidates: [], opponent: order.find((s) => s !== seat)! })),
+      order.map((seat) =>
+        this.interview(seat, { kind: 'interview', when: 'final', candidates: [], opponent: order.find((s) => s !== seat)!, others: this.othersThan(seat) }),
+      ),
     );
     return payouts;
   }
@@ -1015,6 +1027,13 @@ export class GameEngine {
         sameAgain: a.sameAgain ?? null,
         trust: a.trust ?? null,
       };
+      for (const { seat: rated, score } of a.trustEach ?? []) {
+        stats.trustGiven += score;
+        stats.trustGivenCount++;
+        const them = this.seats[rated]!.stats;
+        them.trustReceived += score;
+        them.trustReceivedCount++;
+      }
     }
   }
 
@@ -1072,6 +1091,11 @@ export class GameEngine {
     const seats = waitingOn ?? [...this.waiting.keys()];
     const action = seats.length ? (this.waiting.get(seats[0]!) ?? null) : null;
     this.deps.onStatus?.({ type: 'status', waitingOn: seats, action });
+  }
+
+  /** Every seat but this one, whether still in or not. */
+  private othersThan(seat: number): number[] {
+    return this.seats.map((s) => s.info.seat).filter((s) => s !== seat);
   }
 
   private activeSeats(): number[] {

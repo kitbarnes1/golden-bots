@@ -5,6 +5,7 @@ import {
   type ClaimValue,
   type DecisionPoint,
   type InterviewAnswers,
+  type TrustRating,
 } from '@gb/shared';
 
 export const MAX_SAY_LENGTH = 600;
@@ -106,15 +107,35 @@ export function validateResponse(request: ActionRequest, raw: unknown): Validati
         answers.planned = planned === 'split' || planned === 'steal' || planned === 'undecided' ? planned : null;
         answers.decided = decisionPoint(a.decided);
         answers.why = cleanSay(a.why);
-        const trust = typeof a.trust === 'string' ? Number(a.trust) : a.trust;
-        answers.trust = typeof trust === 'number' && Number.isFinite(trust) ? Math.min(5, Math.max(1, Math.round(trust))) : null;
+        answers.trust = score1to5(a.trust);
         answers.sameAgain = yesNo(a.sameAgain);
       }
+      answers.trustEach = trustRatings(a.trustEach, request.others);
       const answered = Object.values(answers).some((v) => v !== null && v !== '');
       if (!answered) return fail('Answer at least one of the questions.');
       return { ok: true, value: { kind: 'interview', answers } };
     }
   }
+}
+
+/** A trust score: 1 to 5, rounded, from a number or a numeric string. */
+function score1to5(value: unknown): number | null {
+  const n = typeof value === 'string' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) ? Math.min(5, Math.max(1, Math.round(n))) : null;
+}
+
+/** [{ seat, score }] for the players they were asked about, one each, in seat order; null if none. */
+function trustRatings(value: unknown, others: number[]): TrustRating[] | null {
+  if (!Array.isArray(value)) return null;
+  const bySeat = new Map<number, number>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const { seat, score } = item as Record<string, unknown>;
+    const n = score1to5(score);
+    if (typeof seat === 'number' && others.includes(seat) && n !== null && !bySeat.has(seat)) bySeat.set(seat, n);
+  }
+  const ratings = [...bySeat].sort(([a], [b]) => a - b).map(([seat, score]) => ({ seat, score }));
+  return ratings.length ? ratings : null;
 }
 
 /** true/false, or "yes"/"no" in words. */
