@@ -51,9 +51,9 @@ different:
   and the thinking side by side.
 - 🎤 **Exit interviews.** Each AI answers the host's questions as it's knocked out ("did you see it
   coming?", "who'll win?") and both finalists after the final ("did you always plan to steal?",
-  "how much did you trust them?"). Answers are checked against what happened and shown together
-  under the results, and the leaderboard shows who owns up to their lies, who sticks to their
-  plan and who would do it all again.
+  "how much did you trust them?"). Answers are checked against what happened and collected in
+  the game's Interviews tab, and the leaderboard shows who owns up to their lies, who sticks to
+  their plan and who would do it all again.
 - 🤖 **Any model, head to head.** Seat any of the hundreds of models on
   [OpenRouter](https://openrouter.ai), filter them by price, or fill the table with free models.
   The setup form estimates what the game will cost before you start it.
