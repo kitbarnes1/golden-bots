@@ -110,6 +110,8 @@ function datasetCard(games: GameRow[], moves: MoveRow[]): string {
   const voteRatings = moves.reduce((n, m) => n + (m.ratings?.length ?? 0), 0);
   const ratedGames = new Set(moves.filter((m) => m.ratings).map((m) => m.game_id));
   const ratedSince = games.filter((g) => ratedGames.has(g.game_id)).map((g) => g.created_at.slice(0, 10)).sort()[0];
+  const promises = moves.filter((m) => m.move === 'final_choice' && m.promised_split);
+  const broken = promises.filter((m) => m.choice === 'steal').length;
 
   return `---
 license: ${LICENSE}
@@ -167,6 +169,7 @@ it worked, and what they were thinking at the time.
 | Models | ${models.size} |
 | Back-row claims | ${claims.length}, of which ${lies} (${pct(lies, claims.length)}) were false |
 | Finals | ${outcomes('both_split')} both split, ${outcomes('one_steal')} one stole, ${outcomes('both_steal')} both stole |
+| Promises to split | ${promises.length} finalists told the other they'd split; ${broken} (${pct(broken, promises.length)}) then stole |
 | Exit interviews | ${interviews} |
 | Private ratings at votes | ${voteRatings}, from ${ratedGames.size} games (one AI on one player still in: did it believe their claim, and how far did it trust them?) |
 | Played | ${dates.length ? `${dates[0]} to ${dates[dates.length - 1]}` : 'n/a'} |
@@ -233,6 +236,10 @@ rated.groupby("truthful").score.mean()  # do the liars end up trusted less?
 # In Split or Steal: a finalist's trust in the other (1 to 5), and what the other then did.
 finals = interviews[interviews.opponent_model.notna()]
 finals.assign(trust=finals.interview.str.get("trust"))[["model", "opponent_model", "trust", "opponent_choice"]]
+
+# Who keeps their word? Of the finalists who said they'd split, the share who did.
+choices = m[m.move == "final_choice"]
+choices[choices.promised_split == True].assign(kept=lambda c: c.choice == "split").groupby("model").kept.agg(["count", "mean"])
 \`\`\`
 
 The private \`thoughts\` sit next to every one of these moves, so each number can be read alongside
@@ -283,6 +290,7 @@ and if they can't, the tied players draw from the machine and whoever draws a Ki
 | \`ratings\` | For votes: what the voter privately made of each other player still in, one item each. \`seat\` and \`model\` are who it rated; \`believed\` is whether it believed that player's back-row claim; \`trust\` is 1 (not at all) to 5 (completely); and \`truthful\` is whether that claim was really true (nobody knew at the vote). For example, \`[{"seat": 2, "model": "x-ai/grok-4.7", "believed": true, "trust": 4, "truthful": false}, ...]\` is a vote that believed, and fairly trusted, a liar. Any part a model didn't answer is null; the whole list is null if it gave none, for a human (who isn't asked), for tie-breaks, and in older games. |
 | \`pick\`, \`ball\` | For Bin or Win: \`bin\` or \`win\`, and the ball it turned out to be. |
 | \`choice\` | For the final: \`split\` or \`steal\`. |
+| \`promised_split\` | For final choices: whether they told the other finalist they would split, in the chat before the reveal ("I'll split", "I'm going SPLIT", "let's split", "I split if you split", "I'd never steal from you"). A promise followed by \`steal\` is a broken one. Read from what they said by a fixed text check, not by hand (see Limits). |
 | \`opponent_seat\`, \`opponent_model\`, \`opponent_choice\` | For final choices and the finalists' interviews: the other finalist, and what they chose. |
 | \`interview\` | For interviews, their answers: \`when\` (\`eliminated\` or \`final\`), \`claims_true\` ("was everything you claimed true?"), \`saw_it_coming\`, \`winner_pick\` and \`winner_pick_model\` (who they think will win most), \`differently\`, \`planned\` (split, steal or undecided at the start), \`decided\` (when they made up their mind), \`why\`, \`trust\` (finalists: 1 to 5, in the other finalist in Split or Steal), \`same_again\`, and \`trust_each\` (everyone: how much they trusted each of the other players over the game, as \`{"seat", "model", "score", "truthful"}\` with scores 1 to 5, and \`truthful\` whether everything that player claimed, in the rounds the interviewee played, was true). |
 | \`interview_checks\` | Their answers checked against the game: \`lied\` (made a false claim), \`claims_verdict\` (\`truthful\`, \`lied_about_it\`, \`owned_up\` or \`false_confession\`), \`winner_pick_right\`, \`final_choice\` and \`stuck_to_plan\`. |
@@ -341,6 +349,11 @@ Games with scripted test bots are left out too. Nothing from the site's admin si
   rate each other in Split or Steal (\`trust\`). Earlier games only have the finalists' score. The
   private ratings with each vote (\`ratings\`) ${ratedSince ? `start on ${ratedSince}` : "are newer still: no game here has them yet"}. Trust
   also shows in who votes for whom, and what the finalists do with a deal.
+- **Promises are read from the chat by a text check.** \`promised_split\` comes from matching the
+  finalists' own lines against patterns for committing to split, so it works on every game but can
+  miss an unusual wording ("I'm a split person") or, rarely, count a line that wasn't meant as a
+  promise. Questions, hedges ("maybe I'll split"), conditions other than "if you do", and lines about
+  what the other player said don't count. The final chat lines are in the rows, to check it against.
 - **Using the text.** It was written by the models listed. If you plan to train a model on it,
   check each model provider's terms.
 

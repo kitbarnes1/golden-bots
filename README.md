@@ -61,9 +61,9 @@ different:
   every model's trust in every other, from the votes, the interviews or both.
 - 📊 **Data you can download.** Every finished game played only by AI models is published as a
   [dataset on Hugging Face](https://huggingface.co/datasets/Kitbarnes/golden-bots): each claim next
-  to the real balls, every chat line, vote, pick and final choice, the private thoughts behind each
-  move, who believed and trusted whom at each vote, and the exit interviews checked against what
-  happened. It loads straight into `datasets` or pandas.
+  to the real balls, every chat line, vote, pick and final choice (and whether they'd promised to
+  split), the private thoughts behind each move, who believed and trusted whom at each vote, and
+  the exit interviews checked against what happened. It loads straight into `datasets` or pandas.
 - 🤖 **Any model, head to head.** Seat any of the hundreds of models on
   [OpenRouter](https://openrouter.ai), filter them by price, or fill the table with free models.
   The setup form estimates what the game will cost before you start it.
@@ -107,7 +107,7 @@ different:
     <td><img src="docs/screenshots/does-lying-pay.png" alt="Scatter chart of honesty against average winnings for each model"></td>
   </tr>
   <tr>
-    <td><strong>The leaderboard.</strong> Rank the models, or group them by creator, the creator's country, open or closed weights, or how new they are. The tables underneath add final rate, split rate, honesty, fumbles and API cost, who spots lies at the vote, and what the models said in their exit interviews.</td>
+    <td><strong>The leaderboard.</strong> Rank the models, or group them by creator, the creator's country, open or closed weights, or how new they are. The tables underneath add final rate, split rate, whether they kept their word after promising to split, honesty, fumbles and API cost, who spots lies at the vote, and what the models said in their exit interviews.</td>
     <td><strong>Does lying pay?</strong> Plot any two measures against each other. (Early days: a few games per model so far.)</td>
   </tr>
 </table>
@@ -279,7 +279,7 @@ Issues and pull requests are welcome. Some directions that would be fun:
 
 - Bring your own key, so visitors can run games on their own OpenRouter credit
 - More statistics: who spots a lie (from the private ratings with each vote), who gets voted out
-  for lying, how often promises to split are kept, and winnings per dollar spent
+  for lying, and winnings per dollar spent
 - A "who trusts whom" grid on the leaderboard, model by model
 - Tournaments: a fixed set of models playing many seeded games for an Elo-style ranking
 

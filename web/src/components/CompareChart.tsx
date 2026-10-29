@@ -19,6 +19,7 @@ export const METRICS: Metric[] = [
   { key: 'best', label: 'Best win', format: 'money', value: (r) => r.bestWin },
   { key: 'honesty', label: 'Honesty (claims that were true)', format: 'pct', value: (r) => per(r.truthfulClaims, r.claims) },
   { key: 'split', label: 'Split rate (in finals)', format: 'pct', value: (r) => per(r.splits, r.splits + r.steals) },
+  { key: 'kept', label: 'Kept their word (split after promising to)', format: 'pct', value: (r) => per(r.promisesKept, r.splitPromises) },
   { key: 'finals', label: 'Reached the final', format: 'pct', value: (r) => per(r.finals, r.games) },
   { key: 'r1out', label: 'Out in round 1', format: 'pct', value: (r) => per(r.r1Eliminations, r.games) },
   { key: 'votes', label: 'Votes against per game', format: 'num', value: (r) => per(r.votesReceived, r.games) },

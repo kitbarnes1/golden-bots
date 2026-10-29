@@ -57,11 +57,20 @@ export function FinalStage({ final, seats, thinking, choosing }: Props) {
                 )}
               </div>
               <div className="final__status">
-                {revealed
-                  ? payout !== undefined && <span className="badge badge--win">Takes home {formatMoney(payout)}</span>
-                  : seat.choiceLocked
-                    ? <span className="badge">Has chosen</span>
-                    : thinking.includes(seatNo) && <span className="badge badge--thinking">Thinking…</span>}
+                {revealed ? (
+                  <>
+                    {payout !== undefined && <span className="badge badge--win">Takes home {formatMoney(payout)}</span>}
+                    {choice === 'steal' && final.promised[seatNo] !== undefined && (
+                      <span className="badge badge--lie" title={`Before the reveal: “${final.promised[seatNo]}”`}>
+                        Promised to split
+                      </span>
+                    )}
+                  </>
+                ) : seat.choiceLocked ? (
+                  <span className="badge">Has chosen</span>
+                ) : (
+                  thinking.includes(seatNo) && <span className="badge badge--thinking">Thinking…</span>
+                )}
               </div>
             </div>
           );

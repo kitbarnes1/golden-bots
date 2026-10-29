@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { TRUST_HUMANS_KEY } from '@gb/shared';
+import { splitPromises, TRUST_HUMANS_KEY } from '@gb/shared';
 import type {
   ActionRequest,
   CreateGameResponse,
@@ -138,6 +138,10 @@ describe('API', () => {
     expect(fromVotes.reduce((s, p) => s + p.total, 0)).toBe(voteScores.reduce((s, n) => s + n, 0));
     // Two Honest Abes: one rated the other.
     expect(all.trust.some((p) => p.from === 'mock/honest' && p.to === 'mock/honest')).toBe(true);
+    // Promises to split are read from the final chat, and counted against what each finalist chose.
+    const promised = splitPromises(game.events);
+    expect(sum((r) => r.splitPromises)).toBe(promised.size);
+    expect(sum((r) => r.promisesKept)).toBe(game.players.filter((p) => promised.has(p.seat) && p.finalChoice === 'split').length);
   });
 
   it('rejects bad lineups and AI seats without an API key', async () => {

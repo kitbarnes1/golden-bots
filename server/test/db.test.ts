@@ -66,14 +66,15 @@ describe('Db migrations', () => {
     expect(sum('lies_rated')).toBeGreaterThan(0);
     expect(sum('vote_trust_received')).toBe(sum('vote_trust_given'));
 
-    // Wind the database back to version 5, from before the columns, with one game from before the ratings too.
+    // Wind the database back to version 5, from before the columns (and the promise column after them),
+    // with one game from before the ratings too.
     db.sql.exec(`DELETE FROM game_events WHERE game_id = 'older' AND type = 'trust'`);
-    for (const col of VOTE_RATING_COLUMNS) db.sql.exec(`ALTER TABLE game_players DROP COLUMN ${col}`);
+    for (const col of [...VOTE_RATING_COLUMNS, 'promised_split']) db.sql.exec(`ALTER TABLE game_players DROP COLUMN ${col}`);
     db.sql.exec('PRAGMA user_version = 5');
     db.close();
 
     db = new Db(file);
-    expect(db.sql.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
+    expect(db.sql.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
     // The same numbers the engine counted as it went...
     expect(counts(db, 'rated')).toEqual(counted);
     // ...and nothing for a game without ratings.

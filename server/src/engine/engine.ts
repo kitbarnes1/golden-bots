@@ -6,6 +6,7 @@ import {
   cashTotal,
   claimIsTruthful,
   formatMoney,
+  splitPromises,
   type ActionRequest,
   type ActionResponse,
   type Ball,
@@ -39,6 +40,8 @@ export interface PlayerStats {
   reachedFinal: boolean;
   finalChoice: FinalChoice | null;
   finalOutcome: PlayerOutcome | null;
+  /** Finalists: told the other they'd split, in the chat before the reveal. Null for everyone else. */
+  promisedSplit: boolean | null;
   winnings: number;
   claims: number;
   truthfulClaims: number;
@@ -231,6 +234,7 @@ export class GameEngine {
         reachedFinal: false,
         finalChoice: null,
         finalOutcome: null,
+        promisedSplit: null,
         winnings: 0,
         claims: 0,
         truthfulClaims: 0,
@@ -699,9 +703,11 @@ export class GameEngine {
       payouts = choices.map((c) => ({ seat: c.seat, amount: c.seat === thief.seat ? jackpot : 0 }));
     }
 
+    const promised = splitPromises(this.events);
     for (const c of choices) {
       const stats = this.seats[c.seat]!.stats;
       stats.finalChoice = c.choice;
+      stats.promisedSplit = promised.has(c.seat);
       stats.winnings = payouts.find((p) => p.seat === c.seat)!.amount;
       stats.finalOutcome =
         outcome === 'both_split'

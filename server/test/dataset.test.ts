@@ -126,6 +126,24 @@ describe('datasetRows', () => {
     expect(moves.filter((m) => m.opponent_seat !== null).every((m) => m.move === 'final_choice')).toBe(true);
   });
 
+  it('says whether each finalist promised to split before choosing', () => {
+    // GLM: "...let's end it the same way. Split, 50/50, done." and then stole. Llama: "I agree, let's split it 50/50." and split.
+    const { moves } = rows(sample());
+    expect(ofMove(moves, 'final_choice').map((m) => [m.seat, m.promised_split, m.choice])).toEqual([
+      [0, true, 'steal'],
+      [1, true, 'split'],
+    ]);
+    expect(moves.filter((m) => m.move !== 'final_choice').every((m) => m.promised_split === null)).toBe(true);
+
+    // Without Llama's line in the final chat, Llama made no promise; what it said after the reveal doesn't count.
+    const quiet = sample();
+    quiet.events = quiet.events.filter((e) => !(e.type === 'speech' && e.stage === 'final' && e.seat === 1 && e.to === 0));
+    expect(ofMove(rows(quiet).moves, 'final_choice').map((m) => [m.seat, m.promised_split])).toEqual([
+      [0, true],
+      [1, false],
+    ]);
+  });
+
   it('sums up the game', () => {
     const { game } = rows(sample());
     expect(game).toMatchObject({

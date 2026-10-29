@@ -1,6 +1,7 @@
 import type { GameDetail } from './api.js';
 import { cashTotal, claimIsTruthful, claimTotal } from './balls.js';
 import type { GameEvent } from './events.js';
+import { splitPromises } from './promises.js';
 import { pairThoughts, type ThoughtEvent } from './thoughts.js';
 import type { Ball, ClaimValue, DecisionPoint, FinalChoice, FinalOutcome, GameOptions, Stage, VoteRating } from './types.js';
 
@@ -172,6 +173,8 @@ export interface MoveRow {
   pick: 'bin' | 'win' | null;
   ball: DatasetBall | null;
   choice: FinalChoice | null;
+  /** Final choices: they told the other finalist they'd split, in the chat before the reveal (read from what they said). */
+  promised_split: boolean | null;
   /** Final choices and finalists' interviews: the other finalist, and what they chose. */
   opponent_seat: number | null;
   opponent_model: string | null;
@@ -235,6 +238,7 @@ export const MOVE_FEATURES: Record<keyof MoveRow, Feature> = {
   pick: 'string',
   ball: BALL_FEATURE,
   choice: 'string',
+  promised_split: 'bool',
   opponent_seat: 'int64',
   opponent_model: 'string',
   opponent_choice: 'string',
@@ -409,6 +413,7 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
   const claimsMade = new Map<string, number>();
 
   const { byMove } = pairThoughts(events);
+  const promised = splitPromises(events);
   const reveal = events.findLast((e): e is Extract<GameEvent, { type: 'final_reveal' }> => e.type === 'final_reveal');
   /** The other finalist, and what they chose. */
   const opponentOf = (seat: number): Partial<MoveRow> => {
@@ -479,6 +484,7 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
       pick: null,
       ball: null,
       choice: null,
+      promised_split: null,
       opponent_seat: null,
       opponent_model: null,
       opponent_choice: null,
@@ -571,7 +577,9 @@ export function datasetRows(detail: GameDetail, opts: DatasetOptions = {}): Data
         add(e, e.seat, 'bow', 'pick', `${e.seq}`, { say: text(e.say), pick: e.action, ball: ball(e.ball) });
         break;
       case 'final_reveal':
-        for (const c of e.choices) add(e, c.seat, 'final', 'final_choice', `${e.seq}:${c.seat}`, { choice: c.choice, ...opponentOf(c.seat) });
+        for (const c of e.choices) {
+          add(e, c.seat, 'final', 'final_choice', `${e.seq}:${c.seat}`, { choice: c.choice, promised_split: promised.has(c.seat), ...opponentOf(c.seat) });
+        }
         break;
       case 'interview': {
         const a = e.answers;

@@ -66,6 +66,9 @@ export interface LeaderboardRow {
   stoleWins: number;
   gotStolenFrom: number;
   mutualSteals: number;
+  /** Finals where they told the other finalist they'd split (read from the chat before the reveal), and how many of those they split in. */
+  splitPromises: number;
+  promisesKept: number;
   claims: number;
   truthfulClaims: number;
   votesReceived: number;
