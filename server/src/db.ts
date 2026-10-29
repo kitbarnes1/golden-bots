@@ -118,6 +118,68 @@ const MIGRATIONS: Migration[] = [
     `);
     for (const { id } of sql.prepare('SELECT id FROM games').all() as { id: string }[]) recordTrust(sql, id);
   },
+  // The private ratings with each vote, checked against the truth: calls made on others' claims
+  // and how many were right, the false claims among them and how many were believed, the calls
+  // others made on their own false claims, and trust given and got. Games played since the ratings
+  // began are counted from their events; older ones have none.
+  `
+  ALTER TABLE game_players ADD COLUMN beliefs INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN beliefs_right INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN lies_rated INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN lies_believed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN own_lies_rated INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN own_lies_believed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN vote_trust_given INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN vote_trust_given_n INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN vote_trust_received INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE game_players ADD COLUMN vote_trust_received_n INTEGER NOT NULL DEFAULT 0;
+
+  CREATE TEMP TABLE vote_ratings AS
+    WITH truth AS (
+      SELECT game_id, body ->> '$.stage' AS stage, body ->> '$.seat' AS seat, body ->> '$.truthful' AS truthful
+        FROM game_events WHERE type = 'eliminated'
+      UNION ALL
+      SELECT e.game_id, e.body ->> '$.stage', r.value ->> '$.seat', r.value ->> '$.truthful'
+        FROM game_events e, json_each(e.body, '$.rows') r WHERE e.type = 'back_rows_revealed'
+    )
+    SELECT e.game_id, e.body ->> '$.seat' AS rater, r.value ->> '$.seat' AS rated, r.value ->> '$.trust' AS trust,
+           -- A call (1 believed, 0 not) only counts once the claim's truth is known.
+           CASE WHEN t.truthful IS NOT NULL THEN r.value ->> '$.believes' END AS believes,
+           t.truthful
+      FROM game_events e, json_each(e.body, '$.ratings') r
+      LEFT JOIN truth t ON t.game_id = e.game_id AND t.stage = e.body ->> '$.stage' AND t.seat = r.value ->> '$.seat'
+     WHERE e.type = 'trust';
+
+  UPDATE game_players
+     SET beliefs = v.beliefs, beliefs_right = v.beliefs_right, lies_rated = v.lies_rated, lies_believed = v.lies_believed,
+         vote_trust_given = v.trust, vote_trust_given_n = v.trust_n
+    FROM (
+      SELECT game_id, rater AS seat,
+             COUNT(believes) AS beliefs,
+             COUNT(*) FILTER (WHERE believes = truthful) AS beliefs_right,
+             COUNT(believes) FILTER (WHERE truthful = 0) AS lies_rated,
+             COUNT(*) FILTER (WHERE believes = 1 AND truthful = 0) AS lies_believed,
+             IFNULL(SUM(trust), 0) AS trust,
+             COUNT(trust) AS trust_n
+        FROM vote_ratings GROUP BY game_id, rater
+    ) AS v
+   WHERE game_players.game_id = v.game_id AND game_players.seat = v.seat;
+
+  UPDATE game_players
+     SET own_lies_rated = v.own_lies_rated, own_lies_believed = v.own_lies_believed,
+         vote_trust_received = v.trust, vote_trust_received_n = v.trust_n
+    FROM (
+      SELECT game_id, rated AS seat,
+             COUNT(believes) FILTER (WHERE truthful = 0) AS own_lies_rated,
+             COUNT(*) FILTER (WHERE believes = 1 AND truthful = 0) AS own_lies_believed,
+             IFNULL(SUM(trust), 0) AS trust,
+             COUNT(trust) AS trust_n
+        FROM vote_ratings GROUP BY game_id, rated
+    ) AS v
+   WHERE game_players.game_id = v.game_id AND game_players.seat = v.seat;
+
+  DROP TABLE vote_ratings;
+  `,
   // Finalists: did they tell the other they'd split? Games played before this are read from their chat (fillInPromises).
   `
   ALTER TABLE game_players ADD COLUMN promised_split INTEGER;
@@ -268,7 +330,9 @@ export class Db {
            llm_calls = ?, cost_usd = ?,
            iv_done = ?, iv_claims_true = ?, iv_lied = ?, iv_saw_coming = ?, iv_called_winner = ?,
            iv_planned = ?, iv_stuck = ?, iv_same_again = ?, iv_trust = ?,
-           trust_given = ?, trust_given_n = ?, trust_received = ?, trust_received_n = ?
+           trust_given = ?, trust_given_n = ?, trust_received = ?, trust_received_n = ?,
+           beliefs = ?, beliefs_right = ?, lies_rated = ?, lies_believed = ?, own_lies_rated = ?, own_lies_believed = ?,
+           vote_trust_given = ?, vote_trust_given_n = ?, vote_trust_received = ?, vote_trust_received_n = ?
          WHERE game_id = ? AND seat = ?`,
       );
       for (const s of result.stats) {
@@ -299,6 +363,16 @@ export class Db {
           s.trustGivenCount,
           s.trustReceived,
           s.trustReceivedCount,
+          s.beliefs,
+          s.beliefsRight,
+          s.liesRated,
+          s.liesBelieved,
+          s.ownLiesRated,
+          s.ownLiesBelieved,
+          s.voteTrustGiven,
+          s.voteTrustGivenCount,
+          s.voteTrustReceived,
+          s.voteTrustReceivedCount,
           gameId,
           s.seat,
         );
@@ -413,7 +487,17 @@ export class Db {
            SUM(gp.trust_given) AS trust_given,
            SUM(gp.trust_given_n) AS trust_given_n,
            SUM(gp.trust_received) AS trust_received,
-           SUM(gp.trust_received_n) AS trust_received_n
+           SUM(gp.trust_received_n) AS trust_received_n,
+           SUM(gp.beliefs) AS beliefs,
+           SUM(gp.beliefs_right) AS beliefs_right,
+           SUM(gp.lies_rated) AS lies_rated,
+           SUM(gp.lies_believed) AS lies_believed,
+           SUM(gp.own_lies_rated) AS own_lies_rated,
+           SUM(gp.own_lies_believed) AS own_lies_believed,
+           SUM(gp.vote_trust_given) AS vote_trust_given,
+           SUM(gp.vote_trust_given_n) AS vote_trust_given_n,
+           SUM(gp.vote_trust_received) AS vote_trust_received,
+           SUM(gp.vote_trust_received_n) AS vote_trust_received_n
          FROM game_players gp JOIN games g ON g.id = gp.game_id
          WHERE ${filter}
          GROUP BY gp.player_key, gp.kind
@@ -502,6 +586,16 @@ export class Db {
           trustGivenTotal: num(r.trust_given),
           trustReceivedScores: num(r.trust_received_n),
           trustReceivedTotal: num(r.trust_received),
+          beliefs: num(r.beliefs),
+          beliefsRight: num(r.beliefs_right),
+          liesRated: num(r.lies_rated),
+          liesBelieved: num(r.lies_believed),
+          ownLiesRated: num(r.own_lies_rated),
+          ownLiesBelieved: num(r.own_lies_believed),
+          voteTrustGivenScores: num(r.vote_trust_given_n),
+          voteTrustGivenTotal: num(r.vote_trust_given),
+          voteTrustReceivedScores: num(r.vote_trust_received_n),
+          voteTrustReceivedTotal: num(r.vote_trust_received),
         }),
       ),
       history: history.map(

@@ -50,6 +50,16 @@ function row(key: string, label: string, stats: Partial<LeaderboardRow> = {}, fa
     trustGivenTotal: 0,
     trustReceivedScores: 0,
     trustReceivedTotal: 0,
+    beliefs: 0,
+    beliefsRight: 0,
+    liesRated: 0,
+    liesBelieved: 0,
+    ownLiesRated: 0,
+    ownLiesBelieved: 0,
+    voteTrustGivenScores: 0,
+    voteTrustGivenTotal: 0,
+    voteTrustReceivedScores: 0,
+    voteTrustReceivedTotal: 0,
     ...stats,
     ...(kind === 'ai' ? { facts: { ...modelFacts(key), ...facts } } : {}),
   };
@@ -78,8 +88,8 @@ describe('model facts', () => {
 
 describe('groupRows', () => {
   const rows = [
-    row('openai/a', 'GPT A', { games: 2, totalWinnings: 1000, bestWin: 900, splits: 1, steals: 1, splitPromises: 2, promisesKept: 1, claims: 4, truthfulClaims: 3, costUsd: 0.5, lastPlayed: 5 }, { openWeights: false, released: NOW - 30 * DAY }),
-    row('openai/b', 'GPT B', { games: 1, totalWinnings: 500, bestWin: 500, splits: 1, splitPromises: 1, promisesKept: 1, claims: 2, truthfulClaims: 2, costUsd: 0.25, lastPlayed: 9 }, { openWeights: true, released: NOW - 400 * DAY }),
+    row('openai/a', 'GPT A', { games: 2, totalWinnings: 1000, bestWin: 900, splits: 1, steals: 1, splitPromises: 2, promisesKept: 1, claims: 4, truthfulClaims: 3, costUsd: 0.5, lastPlayed: 5, beliefs: 6, beliefsRight: 4, liesRated: 2, liesBelieved: 1, ownLiesRated: 3, ownLiesBelieved: 2 }, { openWeights: false, released: NOW - 30 * DAY }),
+    row('openai/b', 'GPT B', { games: 1, totalWinnings: 500, bestWin: 500, splits: 1, splitPromises: 1, promisesKept: 1, claims: 2, truthfulClaims: 2, costUsd: 0.25, lastPlayed: 9, beliefs: 3, beliefsRight: 3, liesRated: 1, voteTrustGivenScores: 3, voteTrustGivenTotal: 11 }, { openWeights: true, released: NOW - 400 * DAY }),
     row('anthropic/c', 'Claude C', { games: 3, totalWinnings: 300, bestWin: 300 }, { openWeights: false, released: NOW - 10 * DAY }),
     row('deepseek/d', 'DeepSeek D', { games: 2, totalWinnings: 4000, bestWin: 4000 }, { openWeights: true }),
     row('mystery/e', 'Mystery E', { games: 1 }, { openWeights: null, released: null }),
@@ -95,6 +105,7 @@ describe('groupRows', () => {
     const byLab = groupRows(rows, 'lab', NOW);
     const openai = byLab.find((r) => r.label === 'OpenAI')!;
     expect(openai).toMatchObject({ key: 'lab:openai', games: 3, totalWinnings: 1500, avgWinnings: 500, bestWin: 900, splits: 2, steals: 1, splitPromises: 3, promisesKept: 2, claims: 6, truthfulClaims: 5, costUsd: 0.75, lastPlayed: 9 });
+    expect(openai).toMatchObject({ beliefs: 9, beliefsRight: 7, liesRated: 3, liesBelieved: 1, ownLiesRated: 3, ownLiesBelieved: 2, voteTrustGivenScores: 3, voteTrustGivenTotal: 11 });
     expect(openai.members).toEqual(['GPT A', 'GPT B']);
     expect(openai.facts).toBeUndefined();
     expect(byLab.map((r) => r.label)).toEqual(['DeepSeek', 'OpenAI', 'Anthropic', 'Mystery', 'Human players', 'Mock bots']);

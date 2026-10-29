@@ -25,6 +25,7 @@ import {
   type Stage,
   type Usage,
   type Visibility,
+  type VoteRating,
 } from '@gb/shared';
 import { AgentError, type Agent, type AgentContext, type AgentResult } from '../agents/types.js';
 import { Host } from './host.js';
@@ -56,6 +57,23 @@ export interface PlayerStats {
   /** Trust scores the other players gave them, in theirs. Humans aren't interviewed but can be rated. */
   trustReceived: number;
   trustReceivedCount: number;
+  /**
+   * Their private ratings with each vote, checked against the truth: how many claims they said
+   * they believed or didn't, and how many of those calls were right.
+   */
+  beliefs: number;
+  beliefsRight: number;
+  /** Of those, the claims that were false, and how many of them they believed anyway. */
+  liesRated: number;
+  liesBelieved: number;
+  /** Calls the other players made on their own false claims, and how many believed them. Humans can be rated too. */
+  ownLiesRated: number;
+  ownLiesBelieved: number;
+  /** Trust scores (1–5) they gave the others with each vote, and got from them: the sum, and how many. */
+  voteTrustGiven: number;
+  voteTrustGivenCount: number;
+  voteTrustReceived: number;
+  voteTrustReceivedCount: number;
 }
 
 export interface InterviewStats {
@@ -229,6 +247,16 @@ export class GameEngine {
         trustGivenCount: 0,
         trustReceived: 0,
         trustReceivedCount: 0,
+        beliefs: 0,
+        beliefsRight: 0,
+        liesRated: 0,
+        liesBelieved: 0,
+        ownLiesRated: 0,
+        ownLiesBelieved: 0,
+        voteTrustGiven: 0,
+        voteTrustGivenCount: 0,
+        voteTrustReceived: 0,
+        voteTrustReceivedCount: 0,
       },
     }));
     this.bank = shuffle(
@@ -411,6 +439,7 @@ export class GameEngine {
         // Private, like their thoughts. Humans aren't asked (autopilot's ratings aren't theirs).
         if (res.kind === 'vote' && res.ratings && !this.isHuman(seat)) {
           this.push({ type: 'trust', stage, seat, ratings: res.ratings }, { seats: [seat] });
+          this.countRatings(seat, res.ratings);
         }
         this.push({ type: 'vote_cast', stage, seat });
         return { seat, target: res.kind === 'vote' ? res.target : pickOne(candidates, this.rng) };
@@ -491,6 +520,36 @@ export class GameEngine {
     const draws = tied.map((seat, i) => ({ seat, ball: mixer[i]! }));
     this.push({ type: 'tie_draw', stage, draws });
     return draws.find((d) => d.ball.kind === 'killer')!.seat;
+  }
+
+  /**
+   * Totals a voter's private ratings against the truth. Nobody knows it at the vote, but every
+   * back row is turned over straight after, so it's what `eliminated` and `back_rows_revealed` say.
+   */
+  private countRatings(seat: number, ratings: VoteRating[]): void {
+    const mine = this.seats[seat]!.stats;
+    for (const { seat: rated, believes, trust } of ratings) {
+      const them = this.seats[rated]!;
+      if (believes !== null) {
+        const truthful = claimIsTruthful(them.claim ?? [], them.back);
+        mine.beliefs++;
+        if (believes === truthful) mine.beliefsRight++;
+        if (!truthful) {
+          mine.liesRated++;
+          them.stats.ownLiesRated++;
+          if (believes) {
+            mine.liesBelieved++;
+            them.stats.ownLiesBelieved++;
+          }
+        }
+      }
+      if (trust !== null) {
+        mine.voteTrustGiven += trust;
+        mine.voteTrustGivenCount++;
+        them.stats.voteTrustReceived += trust;
+        them.stats.voteTrustReceivedCount++;
+      }
+    }
   }
 
   private eliminate(stage: 'r1' | 'r2', seat: number): void {

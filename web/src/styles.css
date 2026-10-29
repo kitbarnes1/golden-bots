@@ -1753,7 +1753,8 @@ textarea {
 .lb__name {
   font-weight: 600;
 }
-.lb__key {
+.lb__key,
+.lb__n {
   font-size: 0.72rem;
   color: var(--muted);
 }

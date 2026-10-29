@@ -209,6 +209,16 @@ describe('kept their word, on the leaderboard', () => {
         trustGivenCount: 0,
         trustReceived: 0,
         trustReceivedCount: 0,
+        beliefs: 0,
+        beliefsRight: 0,
+        liesRated: 0,
+        liesBelieved: 0,
+        ownLiesRated: 0,
+        ownLiesBelieved: 0,
+        voteTrustGiven: 0,
+        voteTrustGivenCount: 0,
+        voteTrustReceived: 0,
+        voteTrustReceivedCount: 0,
       }),
     );
     db.finishGame(detail.id, 'finished', { jackpot: detail.jackpot, stats });
@@ -237,18 +247,25 @@ describe('kept their word, on the leaderboard', () => {
   it('reads the promises in games played before they were counted from their chat', () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'gb-promises-'));
     const file = path.join(dir, 'games.db');
+    const open: Db[] = [];
     try {
       const before = new Db(file);
+      open.push(before);
       for (const game of [played, quiet]) store(before, game, null);
+      // Back to a database from before promises were counted: version 6, without the column.
+      before.sql.exec('ALTER TABLE game_players DROP COLUMN promised_split; PRAGMA user_version = 6');
       before.close();
+      open.pop();
 
       const db = new Db(file);
+      open.push(db);
+      expect(db.sql.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
       expect(promises(db)).toEqual(expected);
       // Only finalists have a promise either way.
       const seats = db.sql.prepare('SELECT seat, promised_split FROM game_players WHERE game_id = ? ORDER BY seat').all('quiet');
       expect(seats.map((s) => s.promised_split)).toEqual([1, 0, null, null]);
-      db.close();
     } finally {
+      for (const db of open) db.close();
       rmSync(dir, { recursive: true, force: true });
     }
   });

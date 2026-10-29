@@ -290,6 +290,8 @@ export function LeaderboardPage() {
             </div>
           </section>
 
+          <LieSpottingTable rows={rows} selected={selected} onSelect={setHighlight} column={grouping.column} />
+
           {/* Humans aren't interviewed, but the AIs rate how much they trusted them. */}
           <InterviewTable
             rows={rows.filter((r) => r.interviews > 0 || r.trustReceivedScores > 0)}
@@ -323,6 +325,88 @@ export function LeaderboardPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** An average trust score, 1 to 5, and how many it's from. */
+function TrustCell({ total, n }: { total: number; n: number }) {
+  return (
+    <td className="num" title={n ? `Average of ${n} score${n === 1 ? '' : 's'}` : 'None yet'}>
+      {n ? `${(total / n).toFixed(1)} / 5` : '–'}
+      {n > 0 && <div className="lb__n">of {n}</div>}
+    </td>
+  );
+}
+
+/** What the AIs privately made of each other's claims with their votes, checked against the truth. */
+function LieSpottingTable({
+  rows,
+  selected,
+  onSelect,
+  column,
+}: {
+  rows: LeaderboardRow[];
+  selected: string | null;
+  onSelect: (key: string) => void;
+  column: string;
+}) {
+  const rated = (r: LeaderboardRow) => r.beliefs > 0 || r.ownLiesRated > 0 || r.voteTrustGivenScores > 0 || r.voteTrustReceivedScores > 0;
+  if (!rows.some(rated)) return null;
+  // Models from before the ratings began show dashes; humans are only listed once someone's rated them.
+  const shown = rows.filter((r) => r.kind !== 'human' || rated(r));
+  const calls = rows.reduce((s, r) => s + r.beliefs, 0);
+  const onTruth = calls - rows.reduce((s, r) => s + r.liesRated, 0);
+  const share = (n: number, d: number, what: string) => (
+    <td className="num" title={d ? `${n} of ${d} ${what}` : 'None yet'}>
+      {fmtPct(pct(n, d))}
+      {d > 0 && <div className="lb__n">of {d}</div>}
+    </td>
+  );
+  return (
+    <section className="card table-card">
+      <div className="card__head lb__iv-head">
+        <h2>Spotting lies at the vote</h2>
+      </div>
+      <p className="muted small lb__iv-note">
+        With each vote, every AI privately says whether it believes each other player's claim about their back row, and how far
+        it trusts them, from 1 (not at all) to 5 (completely). The back rows are turned over straight after, so each call can be
+        checked: <strong>spots lies</strong> is how often its call was right, <strong>fooled</strong> how often it believed a
+        claim that was false, and <strong>convincing</strong> how often the others believed its own false claims. Humans aren't
+        asked, but they are rated. Older games have no ratings.
+        {calls > 0 &&
+          ` Of the ${calls} claims called here, ${fmtPct(pct(onTruth, calls))} were true, so believing everyone would score ${fmtPct(pct(onTruth, calls))} on spots lies.`}
+      </p>
+      <div className="table-scroll">
+        <table className="lb lb--interviews">
+          <thead>
+            <tr>
+              <th>{column}</th>
+              <th className="num" title="Times they said whether they believed another player's claim">Calls</th>
+              <th className="num" title="Of their calls on other players' claims, the share that matched the truth">Spots lies</th>
+              <th className="num" title="Of the false claims they called, the share they believed">Fooled</th>
+              <th className="num" title="Of the calls on their own false claims, the share that believed them">Convincing</th>
+              <th className="num" title="Average trust they gave the other players with their votes, 1 (none) to 5 (complete)">Trusts others</th>
+              <th className="num" title="Average trust the other players gave them with their votes, 1 (none) to 5 (complete)">Trusted by others</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => (
+              <tr key={r.key} className={r.key === selected ? 'lb__row--hi' : ''} onClick={() => onSelect(r.key)}>
+                <td>
+                  <div className="lb__name">{r.label}</div>
+                </td>
+                <td className="num">{r.kind === 'human' ? '–' : r.beliefs}</td>
+                {share(r.beliefsRight, r.beliefs, 'calls right')}
+                {share(r.liesBelieved, r.liesRated, 'false claims believed')}
+                {share(r.ownLiesBelieved, r.ownLiesRated, 'calls on their lies believed them')}
+                <TrustCell total={r.voteTrustGivenTotal} n={r.voteTrustGivenScores} />
+                <TrustCell total={r.voteTrustReceivedTotal} n={r.voteTrustReceivedScores} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

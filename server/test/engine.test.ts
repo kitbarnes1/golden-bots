@@ -10,7 +10,7 @@ import {
   type GameOptions,
   type PlayerInfo,
 } from '@gb/shared';
-import { GameEngine, GameFatalError, overlap } from '../src/engine/engine.js';
+import { GameEngine, GameFatalError, overlap, type PlayerStats } from '../src/engine/engine.js';
 import { HumanAgent } from '../src/agents/human.js';
 import { MockAgent } from '../src/agents/mock.js';
 import { LlmAgent } from '../src/agents/llm.js';
@@ -907,14 +907,82 @@ describe('trust ratings with each vote', () => {
   it("doesn't ask humans, even when autopilot votes for them", async () => {
     const events: GameEvent[] = [];
     const agents: Agent[] = players.map((p) => (p.seat === 3 ? new HumanAgent(new MockAgent('mock/honest', 3), 1) : new MockAgent('mock/honest', 60 + p.seat)));
-    await new GameEngine({ players, agents, options: options(60, quick), emit: (e) => events.push(e) }).run();
+    const result = await new GameEngine({ players, agents, options: options(60, quick), emit: (e) => events.push(e) }).run();
     const trust = ofType(events, 'trust');
     expect(trust.length).toBeGreaterThanOrEqual(3);
     expect(trust.some((t) => t.seat === 3)).toBe(false);
     // Everyone else still rates the human.
     expect(trust.filter((t) => t.stage === 'r1').every((t) => t.ratings.some((r) => r.seat === 3))).toBe(true);
+    expectTotalled(events, result.stats);
+    const human = result.stats[3]!;
+    expect([human.beliefs, human.voteTrustGivenCount]).toEqual([0, 0]);
+    expect(human.voteTrustReceivedCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('checks every call against the truth: who spots lies, who gets fooled, whose lies convince', async () => {
+    let lies = 0;
+    let fooled = 0;
+    for (const seed of [23, 31, 47, 58]) {
+      const { events, result } = await play(seed);
+      expectTotalled(events, result.stats);
+      lies += result.stats.reduce((n, s) => n + s.liesRated, 0);
+      fooled += result.stats.reduce((n, s) => n + s.liesBelieved, 0);
+    }
+    // Enough lies were told, and believed, for the totals to mean something.
+    expect(lies).toBeGreaterThan(0);
+    expect(fooled).toBeGreaterThan(0);
+  });
+
+  it('counts only the calls and scores a contestant gave', async () => {
+    // Seat 1 says whether it believes the first player it rates, and scores only the second.
+    const { events, result } = await play(25, [
+      () => undefined,
+      (req) =>
+        req.kind === 'vote'
+          ? { target: req.candidates[0], ratings: req.candidates.map((seat, i) => ({ seat, believes: i === 0 ? true : null, trust: i === 1 ? 2 : null })) }
+          : undefined,
+    ]);
+    expectTotalled(events, result.stats);
+    const votes = ofType(events, 'trust').filter((t) => t.seat === 1).length;
+    expect(votes).toBeGreaterThanOrEqual(1);
+    const picky = result.stats[1]!;
+    expect([picky.beliefs, picky.voteTrustGivenCount, picky.voteTrustGiven]).toEqual([votes, votes, 2 * votes]);
   });
 });
+
+/** The engine's totals should match the calls and scores in the `trust` events, checked against what was turned over. */
+function expectTotalled(events: GameEvent[], stats: PlayerStats[]): void {
+  const truth = new Map<string, boolean>();
+  for (const e of events) {
+    if (e.type === 'eliminated') truth.set(`${e.stage}:${e.seat}`, e.truthful);
+    if (e.type === 'back_rows_revealed') for (const r of e.rows) truth.set(`${e.stage}:${r.seat}`, r.truthful);
+  }
+  const ratings = ofType(events, 'trust').flatMap((t) => t.ratings.map((r) => ({ ...r, from: t.seat, truthful: truth.get(`${t.stage}:${r.seat}`)! })));
+  const calls = ratings.filter((r) => r.believes !== null);
+  const scores = ratings.filter((r) => r.trust !== null);
+  const count = <T>(list: T[], f: (x: T) => boolean) => list.filter(f).length;
+  const total = (list: typeof ratings) => list.reduce((n, r) => n + r.trust!, 0);
+  const expected = stats.map((s) => {
+    const mine = calls.filter((c) => c.from === s.seat);
+    const lies = mine.filter((c) => !c.truthful);
+    const onMyLies = calls.filter((c) => c.seat === s.seat && !c.truthful);
+    return {
+      seat: s.seat,
+      beliefs: mine.length,
+      beliefsRight: count(mine, (c) => c.believes === c.truthful),
+      liesRated: lies.length,
+      liesBelieved: count(lies, (c) => c.believes === true),
+      ownLiesRated: onMyLies.length,
+      ownLiesBelieved: count(onMyLies, (c) => c.believes === true),
+      voteTrustGiven: total(scores.filter((r) => r.from === s.seat)),
+      voteTrustGivenCount: count(scores, (r) => r.from === s.seat),
+      voteTrustReceived: total(scores.filter((r) => r.seat === s.seat)),
+      voteTrustReceivedCount: count(scores, (r) => r.seat === s.seat),
+    };
+  });
+  const keys = Object.keys(expected[0]!) as (keyof PlayerStats)[];
+  expect(stats.map((s) => Object.fromEntries(keys.map((k) => [k, s[k]])))).toEqual(expected);
+}
 
 /** Scripted overrides on top of any agent (the interview tests' contestants). */
 class ScriptedAgentWrapping implements Agent {
