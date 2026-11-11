@@ -137,13 +137,6 @@ export interface ModelFacts {
   released: number | null;
 }
 
-export interface LeaderboardHistoryPoint {
-  gameId: string;
-  finishedAt: number;
-  key: string;
-  winnings: number;
-}
-
 /** Where a trust rating came from: privately with each vote, or in the exit interview. */
 export type TrustSource = 'vote' | 'interview';
 
@@ -164,7 +157,6 @@ export interface TrustPair {
 
 export interface LeaderboardResponse {
   rows: LeaderboardRow[];
-  history: LeaderboardHistoryPoint[];
   totalGames: number;
   /** Who trusts whom, per pair of contestants and source. */
   trust: TrustPair[];

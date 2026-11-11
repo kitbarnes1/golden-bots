@@ -3,7 +3,8 @@ import { formatMoney, groupRows, type GroupBy, type LeaderboardResponse, type Le
 import { CompareChart } from '../components/CompareChart';
 import { RankChart } from '../components/RankChart';
 import { TrustGrid } from '../components/TrustGrid';
-import { api, prefs } from '../lib/api';
+import { api, errorText, prefs } from '../lib/api';
+import { useTitle } from '../lib/useTitle';
 
 type SortKey =
   | 'label'
@@ -93,6 +94,7 @@ export function LeaderboardPage() {
   const grouping = GROUPINGS.find((g) => g.by === groupBy)!;
   const grouped = groupBy !== 'model';
   const [error, setError] = useState<string | null>(null);
+  useTitle('Leaderboard');
   // Off by default (a new key, so an old "on" from before doesn't stick).
   const [includeHumans, setIncludeHumans] = useState(() => prefs.get('lb.includeHumans', false));
   const [includeUnranked, setIncludeUnranked] = useState(() => prefs.get('lb.practice', false));
@@ -105,7 +107,7 @@ export function LeaderboardPage() {
         setData(d);
         setError(null);
       },
-      (e: unknown) => setError(String(e)),
+      (e: unknown) => setError(errorText(e)),
     );
   }, [includeHumans, includeUnranked]);
 

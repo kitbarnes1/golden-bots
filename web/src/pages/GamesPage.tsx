@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GameSummary } from '@gb/shared';
 import { GameList } from '../components/GameList';
-import { api } from '../lib/api';
+import { api, errorText } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useTitle } from '../lib/useTitle';
 
 const PAGE = 30;
 
@@ -11,9 +12,16 @@ export function GamesPage() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  useTitle('All games');
 
   const load = useCallback(() => {
-    api.games(PAGE, offset).then(setGames, (e: unknown) => setError(String(e)));
+    api.games(PAGE, offset).then(
+      (g) => {
+        setGames(g);
+        setError(null);
+      },
+      (e: unknown) => setError(errorText(e)),
+    );
   }, [offset]);
   useEffect(load, [load]);
 
@@ -23,7 +31,7 @@ export function GamesPage() {
       await api.remove(id);
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      alert(errorText(err));
     }
   };
 

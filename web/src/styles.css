@@ -1735,7 +1735,9 @@ textarea {
   letter-spacing: inherit;
   text-transform: inherit;
   cursor: pointer;
-  padding: 0;
+  /* A taller area to click or tap, without making the row any taller. */
+  padding: 5px 0;
+  margin: -5px 0;
 }
 .lb .num {
   text-align: right;

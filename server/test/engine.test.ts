@@ -250,6 +250,24 @@ describe('GameEngine', () => {
     expect(fast.events.some((e) => e.type === 'paused')).toBe(false);
   });
 
+  it("doesn't wait for a human who has left their game to autopilot", async () => {
+    const events: GameEvent[] = [];
+    const mock = new MockAgent('mock/honest', 0);
+    const gone: Agent = { interactive: true, absent: true, act: (req, ctx, meta) => mock.act(req, ctx, meta) };
+    const engine: GameEngine = new GameEngine({
+      players,
+      agents: [gone, ...players.slice(1).map((p) => new MockAgent('mock/chaos', 51 + p.seat))],
+      options: options(51, { chatSeconds: 2, finalChatSeconds: 2, reflectSeconds: 1, readAtMyPace: true }),
+      emit: (e) => {
+        events.push(e);
+        if (e.type === 'chat_started' && e.participants.includes(0)) setTimeout(() => engine.doneTalking(0), 1);
+      },
+    });
+    await engine.run();
+    expect(events.at(-1)!.type).toBe('game_over');
+    expect(events.some((e) => e.type === 'paused')).toBe(false);
+  });
+
   it('lets the finalists react after the reveal, whoever was stolen from first', async () => {
     const prompts: string[] = [];
     const voteHigh: Script = (req) => (req.kind === 'vote' ? { target: Math.max(...req.candidates) } : undefined);

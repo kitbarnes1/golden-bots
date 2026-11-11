@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ApiError } from '../lib/api';
 import { safeNext, useAuth } from '../lib/auth';
+import { useTitle } from '../lib/useTitle';
 
 export function LoginPage() {
   const auth = useAuth();
@@ -11,6 +12,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useTitle('Log in');
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

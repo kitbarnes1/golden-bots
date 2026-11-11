@@ -51,6 +51,12 @@ export const config = {
   adminPassword: process.env.ADMIN_PASSWORD ?? '',
   maxConcurrentGames: int('MAX_CONCURRENT_GAMES', 3),
   humanTimeoutMs: int('HUMAN_TIMEOUT_MS', 15 * 60_000),
+  /**
+   * A game that has waited this long in one go for its human player (away from the page, or
+   * yet to click Continue) is stopped, so one nobody comes back to doesn't hold a slot for ever.
+   * 0 = never.
+   */
+  pauseLimitMs: int('PAUSE_LIMIT_MINUTES', 60) * 60_000,
   mockDelayMs: int('MOCK_DELAY_MS', 600),
   /** Pause before each vote is read out (the last one gets half as long again). 0 = no suspense. */
   voteRevealMs: int('VOTE_REVEAL_MS', 2500),

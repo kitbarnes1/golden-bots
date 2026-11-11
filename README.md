@@ -218,12 +218,13 @@ All settings are environment variables (see `.env.example`).
 |---|---|---|
 | `OPENROUTER_API_KEY` | – | Enables AI contestants. Optional: you can paste a key on the **Settings** page instead. When this is set it always wins, and Settings can't change it. |
 | `ADMIN_PASSWORD` | – | Log in with it to start, stop or delete games and to change Settings. **Set this in production**, otherwise anyone can spend your credit or swap your API key. Watching and the leaderboard stay public. Sessions are 30-day HttpOnly cookies; repeated wrong guesses lock logins out for a while. |
-| `PUBLIC_URL` | `http://localhost:3000` | Sent to OpenRouter as the app's referer. |
+| `PUBLIC_URL` | `http://localhost:3000` | Where the site lives. It goes into the page's link-preview tags (so a shared link shows the title and picture), is sent to OpenRouter as the app's referer, and, when it starts with `https://`, plain-http visitors arriving through Cloudflare are sent there. |
 | `PORT` / `HOST` | `3000` / `0.0.0.0` | Where the server listens. |
 | `MAX_CONCURRENT_GAMES` | `3` | Games that can run at once. |
 | `FEATURED_MODELS` | automatic | Comma-separated model ids to suggest first in the picker (also used for random lineups and autoplay). |
 | `LLM_MAX_TOKENS` / `LLM_TIMEOUT_MS` / `LLM_MAX_RETRIES` | `4096` / `120000` / `3` | Per-call limits. |
 | `HUMAN_TIMEOUT_MS` | 15 min | How long a human gets per move before autopilot takes over. |
+| `PAUSE_LIMIT_MINUTES` | `60` | A game that waits this long in one go for its human player (away from the page, or yet to click Continue) is stopped, so it doesn't hold a game slot for ever. `0` never stops one. |
 | `VOTE_REVEAL_MS` | `2500` | Pause before each vote is read out (the last gets half as long again). `0` reads them straight out. |
 | `MOCK_DELAY_MS` | `600` | Roughly how long a mock player "thinks" before each move, so practice games are watchable. `0` plays them instantly. |
 | `AUTOPLAY_INTERVAL_MINUTES` | `0` (off) | Start an all-AI game every N minutes, so the leaderboard fills up by itself. |

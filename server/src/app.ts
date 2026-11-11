@@ -319,20 +319,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return board;
   });
 
-  await serveWebApp(app, cfg.webDist);
+  await serveWebApp(app, cfg.webDist, cfg.publicUrl);
   return app;
 }
 
-async function serveWebApp(app: FastifyInstance, webDist: string): Promise<void> {
+async function serveWebApp(app: FastifyInstance, webDist: string, publicUrl: string): Promise<void> {
   const index = path.join(webDist, 'index.html');
   if (!fs.existsSync(index)) {
     app.log.warn(`No web build at ${webDist}; serving the API only (use the Vite dev server for the UI).`);
     app.setNotFoundHandler((_req, reply) => reply.status(404).send({ error: 'Not found' }));
     return;
   }
+  // Link previews (the og: tags) need full addresses, and those depend on where this copy is hosted.
+  const site = publicUrl.replace(/\/+$/, '').replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+  const page = fs.readFileSync(index, 'utf8').replaceAll('__PUBLIC_URL__', site);
   await app.register(fastifyStatic, {
     root: webDist,
     wildcard: false,
+    // index.html is sent by the handler below, with those addresses filled in.
+    globIgnore: ['index.html'],
     setHeaders: (reply, filePath) => {
       reply.header(
         'Cache-Control',
@@ -340,11 +345,12 @@ async function serveWebApp(app: FastifyInstance, webDist: string): Promise<void>
       );
     },
   });
-  // Client-side routes fall back to index.html; unknown API routes stay 404.
+  // Every page of the app is that one file; unknown API routes and missing assets stay 404.
   app.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {
-    if (req.method !== 'GET' || req.url.startsWith('/api/') || req.url.startsWith('/assets/')) {
+    const browsing = req.method === 'GET' || req.method === 'HEAD';
+    if (!browsing || req.url.startsWith('/api/') || req.url.startsWith('/assets/')) {
       return reply.status(404).send({ error: 'Not found' });
     }
-    return reply.header('Cache-Control', 'no-cache').sendFile('index.html');
+    return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(page);
   });
 }

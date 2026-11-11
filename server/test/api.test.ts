@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -92,7 +93,6 @@ describe('API', () => {
     const all: LeaderboardResponse = (await app.inject('/api/leaderboard?includeUnranked=1')).json();
     expect(all.totalGames).toBe(1);
     expect(all.rows.reduce((s, r) => s + r.games, 0)).toBe(4);
-    expect(all.history).toHaveLength(4);
     const honest = all.rows.find((r) => r.key === 'mock/honest')!;
     expect(honest.games).toBe(2);
     expect(honest.truthfulClaims).toBe(honest.claims);
@@ -296,6 +296,41 @@ describe('API', () => {
     expect(late.statusCode).toBe(409);
   });
 
+  it('stops a game left paused too long, so it stops holding a slot', async () => {
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    await setup({ maxConcurrentGames: 1, pauseLimitMs: 60 });
+    const payload = { seats: [{ kind: 'human', name: 'Kit' }, ...mocks.slice(1).map((model) => ({ kind: 'mock', model }))] };
+    const { id, playerToken, seat } = (await app.inject({ method: 'POST', url: '/api/games', payload })).json<CreateGameResponse>();
+    expect((await app.inject({ method: 'POST', url: '/api/games', payload })).statusCode).toBe(429);
+
+    // The player makes their moves but never clicks Continue: the first thing an AI says leaves the game waiting.
+    while (manager.isRunning(id)) {
+      const me = await getGame(id, playerToken);
+      const answered = new Set(me.events.filter((e) => e.type === 'input_received').map((e) => (e as { requestId: string }).requestId));
+      const next = me.events.findLast(
+        (e): e is Extract<GameEvent, { type: 'awaiting_input' }> => e.type === 'awaiting_input' && !answered.has(e.requestId),
+      );
+      if (next) {
+        await app.inject({
+          method: 'POST',
+          url: `/api/games/${id}/action`,
+          headers: { 'x-player-token': playerToken! },
+          payload: { requestId: next.requestId, response: answer(next.request, me, seat!) },
+        });
+      }
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    const after = await getGame(id);
+    expect(after.status).toBe('abandoned');
+    expect(after.events.findLast((e) => e.type === 'paused')).toMatchObject({ reason: 'reading' });
+    expect(after.events.at(-1)).toMatchObject({ type: 'game_error', message: expect.stringMatching(/waited 1 minute for its player/) });
+    // The slot is free again.
+    expect((await app.inject({ method: 'POST', url: '/api/games', payload })).statusCode).toBe(201);
+  });
+
   it('shows everything to everyone once the human player is knocked out', async () => {
     // Slow the mocks a little, or the game is over before we can look at it with the human out.
     await manager.shutdown();
@@ -405,6 +440,46 @@ describe('API', () => {
     expect(res.headers['x-frame-options']).toBe('DENY');
     expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
     expect((await app.inject('/nope')).headers['x-frame-options']).toBe('DENY');
+  });
+
+  it("serves the web app's one page for every route, with this site's address in its link-preview tags", async () => {
+    await manager.shutdown();
+    await app.close();
+    db.close();
+    const webDist = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-web-'));
+    fs.mkdirSync(path.join(webDist, 'assets'));
+    fs.writeFileSync(path.join(webDist, 'assets', 'app.js'), 'console.log(1)');
+    fs.writeFileSync(
+      path.join(webDist, 'index.html'),
+      '<html><head><meta property="og:image" content="__PUBLIC_URL__/og.png" /><meta property="og:url" content="__PUBLIC_URL__/" /></head><body></body></html>',
+    );
+    try {
+      await setup({ webDist, publicUrl: 'https://bots.example.test/' });
+      for (const url of ['/', '/index.html', '/leaderboard', '/game/abc']) {
+        const res = await app.inject(url);
+        expect(res.statusCode, url).toBe(200);
+        expect(res.headers['content-type']).toContain('text/html');
+        expect(res.headers['cache-control']).toBe('no-cache');
+        expect(res.headers['x-frame-options']).toBe('DENY');
+        expect(res.body).toContain('content="https://bots.example.test/og.png"');
+        expect(res.body).toContain('content="https://bots.example.test/"');
+        expect(res.body).not.toContain('__PUBLIC_URL__');
+      }
+      // Link checkers often ask with HEAD first.
+      expect((await app.inject({ method: 'HEAD', url: '/leaderboard' })).statusCode).toBe(200);
+
+      const asset = await app.inject('/assets/app.js');
+      expect(asset.statusCode).toBe(200);
+      expect(asset.headers['cache-control']).toContain('immutable');
+      // Things that aren't pages stay 404, so a missing script never comes back as HTML.
+      expect((await app.inject('/assets/missing.js')).statusCode).toBe(404);
+      expect((await app.inject('/api/nope')).statusCode).toBe(404);
+      expect((await app.inject({ method: 'POST', url: '/leaderboard' })).statusCode).toBe(404);
+    } finally {
+      await app.close();
+      fs.rmSync(webDist, { recursive: true, force: true });
+      await setup(); // for afterEach to close
+    }
   });
 
   it('limits how fast one visitor can call the API, per Cloudflare visitor address', async () => {

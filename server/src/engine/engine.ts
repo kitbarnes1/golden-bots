@@ -318,7 +318,8 @@ export class GameEngine {
   private async letHumanRead(): Promise<void> {
     if (!this.deps.options.readAtMyPace) return;
     const reader = this.seats.find((s) => s.active && s.agent.interactive);
-    if (!reader || this.paused) return;
+    // Someone who has left their game to autopilot isn't there to read.
+    if (!reader || this.paused || reader.agent.absent) return;
     this.pause(reader.info.seat, 'reading');
     await this.whilePaused();
   }

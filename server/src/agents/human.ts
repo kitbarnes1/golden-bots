@@ -31,6 +31,11 @@ export class HumanAgent implements Agent {
     private readonly timeoutMs: number,
   ) {}
 
+  /** They ran out of time on a move, so autopilot plays the rest of their game. */
+  get absent(): boolean {
+    return this.autopilotEngaged;
+  }
+
   get waitingFor(): { requestId: string; request: ActionRequest } | null {
     return this.pending ? { requestId: this.pending.requestId, request: this.pending.request } : null;
   }

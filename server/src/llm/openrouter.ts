@@ -161,11 +161,21 @@ export class OpenRouterClient {
         throw new LlmError(`OpenRouter ${res.status}: ${message}`, false, res.status);
       }
 
-      const json = JSON.parse(text) as {
+      let json: {
         error?: { message?: string; code?: number };
         choices?: { message?: RawMessage }[];
         usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
       };
+      try {
+        json = JSON.parse(text) as typeof json;
+      } catch {
+        // A "success" with an empty or cut-off body: the provider dropped out mid-reply. Worth another go.
+        if (attempt < this.opts.maxRetries) {
+          await sleep(backoffMs(attempt++, res.headers.get('retry-after'), false), req.signal);
+          continue;
+        }
+        throw new LlmError(`${req.model} sent a reply that couldn't be read.`, false, res.status);
+      }
       if (json.error) {
         const status = json.error.code;
         const message = json.error.message ?? 'unknown error';

@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import type { ApiKeyStatus } from '@gb/shared';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useTitle } from '../lib/useTitle';
 
 export function SettingsPage() {
   const auth = useAuth();
@@ -11,6 +12,7 @@ export function SettingsPage() {
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
   const [done, setDone] = useState<'saved' | 'deleted' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useTitle('Settings');
   const { refresh } = auth;
 
   const fail = useCallback(
