@@ -48,6 +48,8 @@ export interface ActMeta {
 export interface Agent {
   /** Humans get an awaiting_input event before act() is called. */
   readonly interactive?: boolean;
+  /** A human who has stopped answering, so autopilot is playing for them: nothing waits on them any more. */
+  readonly absent?: boolean;
   act(request: ActionRequest, ctx: AgentContext, meta: ActMeta): Promise<AgentResult>;
   /** The game is paused or resumed (humans stop their move clock). */
   pause?(): void;

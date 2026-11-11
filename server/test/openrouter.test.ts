@@ -90,6 +90,33 @@ describe('OpenRouterClient', () => {
     expect((await catalog.list()).map((m) => m.id)).toEqual(['ok/model:free']);
   });
 
+  it("keeps the last model list while a newer one loads, and when OpenRouter can't be reached", async () => {
+    const entry = (id: string) => ({ id, name: id, created: 1, context_length: 100_000, pricing: { prompt: '1', completion: '1' } });
+    let ids = ['a/one'];
+    let down = false;
+    handler = () => (down ? { status: 503, json: { error: { message: 'down' } } } : { json: { data: ids.map(entry) } });
+    let now = 1_000_000;
+    const c = client();
+    const catalog = new ModelCatalog(() => c, [], { warn: () => {} }, undefined, () => now);
+    const listed = async () => (await catalog.list()).map((m) => m.id);
+    expect(await listed()).toEqual(['a/one']);
+
+    // Two hours on OpenRouter is down. The old list still comes back, at once and after the failed fetch.
+    now += 2 * 60 * 60_000;
+    down = true;
+    expect(await listed()).toEqual(['a/one']);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await listed()).toEqual(['a/one']);
+
+    // It's back, with a new model: the old list is served while the new one loads.
+    now += 2 * 60_000;
+    down = false;
+    ids = ['a/one', 'b/two'];
+    expect(await listed()).toEqual(['a/one']);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await listed()).toEqual(['a/one', 'b/two']);
+  });
+
   it('checks a model by asking it a small game question', async () => {
     const answers: Record<string, () => ReturnType<Handler>> = {
       'good/model': () => reply('{"thoughts":"bluff","claimed_back_row":[5000,"KILLER"],"say":"Five grand and a Killer."}'),
@@ -195,6 +222,23 @@ describe('OpenRouterClient', () => {
     const res = await client().chat({ model: 'a/b', messages: [] });
     expect(res.content).toBe('{"ok":1}');
     expect(n).toBe(3);
+  });
+
+  it('tries again after a success with nothing readable in it, and fumbles (not stops) if it keeps happening', async () => {
+    let n = 0;
+    // json: undefined sends a 200 with an empty body, as when a provider drops out mid-reply.
+    handler = () => (++n < 2 ? { headers: { 'retry-after': '0' }, json: undefined } : reply('{"ok":1}'));
+    const res = await client().chat({ model: 'a/b', messages: [] });
+    expect(res.content).toBe('{"ok":1}');
+    expect(n).toBe(2);
+
+    handler = () => ({ headers: { 'retry-after': '0' }, json: undefined });
+    const err = await client({ maxRetries: 1 })
+      .chat({ model: 'a/b', messages: [] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LlmError);
+    expect((err as LlmError).fatal).toBe(false);
+    expect((err as LlmError).message).toMatch(/couldn't be read/);
   });
 
   it('gives up with a fatal error if OpenRouter stays unreachable', async () => {

@@ -9,7 +9,6 @@ import type {
   GamePlayerSummary,
   GameStatus,
   GameSummary,
-  LeaderboardHistoryPoint,
   LeaderboardResponse,
   LeaderboardRow,
   PlayerInfo,
@@ -505,16 +504,6 @@ export class Db {
       )
       .all() as Row[];
 
-    const history = this.sql
-      .prepare(
-        `SELECT g.id AS game_id, g.finished_at, gp.player_key AS key, gp.winnings
-         FROM game_players gp JOIN games g ON g.id = gp.game_id
-         WHERE ${filter}
-         ORDER BY g.finished_at, g.id, gp.seat
-         LIMIT 20000`,
-      )
-      .all() as Row[];
-
     const totalGames = this.sql
       .prepare(
         `SELECT COUNT(DISTINCT g.id) AS n FROM games g JOIN game_players gp ON gp.game_id = g.id WHERE ${filter}`,
@@ -596,14 +585,6 @@ export class Db {
           voteTrustGivenTotal: num(r.vote_trust_given),
           voteTrustReceivedScores: num(r.vote_trust_received_n),
           voteTrustReceivedTotal: num(r.vote_trust_received),
-        }),
-      ),
-      history: history.map(
-        (h): LeaderboardHistoryPoint => ({
-          gameId: h.game_id as string,
-          finishedAt: num(h.finished_at),
-          key: h.key as string,
-          winnings: num(h.winnings),
         }),
       ),
       totalGames: totalGames.n,

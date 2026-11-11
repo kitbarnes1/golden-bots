@@ -56,6 +56,10 @@ interface RunningGame {
   humanSeat?: number;
   playerStreams: Set<Subscriber>;
   pauseTimer?: NodeJS.Timeout;
+  /** Runs out when the game has stayed paused for the limit. */
+  giveUpTimer?: NodeJS.Timeout;
+  /** Why the server stopped the game itself, to show in place of the usual "stopped" message. */
+  stopReason?: string;
 }
 
 /** A reload or a blip shouldn't pause the game: wait this long after the player's page goes. */
@@ -174,7 +178,8 @@ export class GameManager {
       },
     });
     this.running.set(id, game);
-    game.done = this.run(game);
+    // run() records how the game ended; if even that fails (a full disk, say), log it rather than crash.
+    game.done = this.run(game).catch((err: unknown) => this.log.error({ err, gameId: id }, 'Could not record how the game ended'));
     if (game.humanSeat !== undefined) this.schedulePause(game, FIRST_JOIN_GRACE_MS);
     this.log.info({ gameId: id, players: players.map((p) => p.model ?? p.name) }, 'Game started');
 
@@ -189,7 +194,7 @@ export class GameManager {
     } catch (err) {
       const aborted = err instanceof GameAbortedError || game.abort.signal.aborted;
       status = aborted ? 'abandoned' : 'error';
-      const message = aborted ? 'The game was stopped.' : err instanceof Error ? err.message : String(err);
+      const message = aborted ? (game.stopReason ?? 'The game was stopped.') : err instanceof Error ? err.message : String(err);
       if (err instanceof GameFatalError) this.log.warn({ gameId: game.id, reason: err.message }, 'Game stopped');
       else if (!aborted) this.log.error({ err, gameId: game.id }, 'Game crashed');
       try {
@@ -200,6 +205,7 @@ export class GameManager {
       this.db.finishGame(game.id, status, { jackpot: null, stats: game.engine.stats, error: message });
     } finally {
       clearTimeout(game.pauseTimer);
+      clearTimeout(game.giveUpTimer);
       this.broadcast(game, { kind: 'end', status });
       this.running.delete(game.id);
     }
@@ -209,7 +215,9 @@ export class GameManager {
   private schedulePause(game: RunningGame, ms: number): void {
     clearTimeout(game.pauseTimer);
     game.pauseTimer = setTimeout(() => {
-      if (game.playerStreams.size === 0 && game.humanSeat !== undefined && this.humanStillIn(game) && this.running.has(game.id)) {
+      // Once autopilot has taken over for them, the game plays out without waiting.
+      const absent = game.humanSeat !== undefined && game.humans.get(game.humanSeat)?.absent;
+      if (game.playerStreams.size === 0 && game.humanSeat !== undefined && !absent && this.humanStillIn(game) && this.running.has(game.id)) {
         game.engine.pause(game.humanSeat);
       }
     }, ms);
@@ -218,6 +226,21 @@ export class GameManager {
   private onEvent(game: RunningGame, event: GameEvent): void {
     this.db.appendEvent(game.id, event);
     this.broadcast(game, { kind: 'event', event });
+    if (event.type === 'paused') this.startPauseLimit(game);
+    else if (event.type === 'resumed') clearTimeout(game.giveUpTimer);
+  }
+
+  /** A game left paused for a long time is stopped, so one nobody comes back to doesn't hold a slot for ever. */
+  private startPauseLimit(game: RunningGame): void {
+    clearTimeout(game.giveUpTimer);
+    const limit = this.cfg.pauseLimitMs;
+    if (limit <= 0) return;
+    game.giveUpTimer = setTimeout(() => {
+      const minutes = Math.max(1, Math.round(limit / 60_000));
+      game.stopReason = `It waited ${minutes} minute${minutes === 1 ? '' : 's'} for its player, who didn't come back to it.`;
+      this.log.info({ gameId: game.id }, 'Stopping a game left paused too long');
+      game.abort.abort();
+    }, limit);
   }
 
   private broadcast(game: RunningGame, msg: StreamMessage): void {

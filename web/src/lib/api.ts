@@ -45,14 +45,34 @@ export class ApiError extends Error {
   }
 }
 
+/** What to show the visitor when something fails: the message, without the "Error:" in front. */
+export function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+const unavailable = (status: number) => `The server isn't answering properly just now (error ${status}). Try again in a moment.`;
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body) headers.set('Content-Type', 'application/json');
-  const res = await fetch(path, { ...init, headers });
-  const text = await res.text();
-  const json = text ? (JSON.parse(text) as unknown) : undefined;
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(path, { ...init, headers });
+    text = await res.text();
+  } catch {
+    throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
+  }
+  let json: unknown;
+  try {
+    json = text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    // Not the app's own reply: a proxy's error page, as while the server restarts.
+    throw new ApiError(res.status, unavailable(res.status));
+  }
   if (!res.ok) {
-    const message = (json as { error?: string } | undefined)?.error ?? `Request failed (${res.status})`;
+    const message =
+      (json as { error?: string } | undefined)?.error ?? (res.status >= 500 ? unavailable(res.status) : `Request failed (${res.status})`);
     throw new ApiError(res.status, message);
   }
   return json as T;

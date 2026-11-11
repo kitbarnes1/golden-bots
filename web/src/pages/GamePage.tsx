@@ -11,10 +11,11 @@ import { Podium } from '../components/Podium';
 import { RoundsReview } from '../components/RoundsReview';
 import { TableStrip } from '../components/TableStrip';
 import { VoteTally } from '../components/VoteTally';
-import { api, ApiError, prefs } from '../lib/api';
+import { api, ApiError, errorText, prefs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { buildView, STAGE_LABELS } from '../lib/gameState';
 import { useGame } from '../lib/useGame';
+import { useTitle } from '../lib/useTitle';
 
 /** Events that don't change anything on screen, so replays skip straight past them. */
 const SILENT = new Set<GameEvent['type']>(['awaiting_input', 'input_received', 'vote_cast', 'trust', 'chat_pass', 'paused', 'resumed']);
@@ -40,6 +41,8 @@ export function GamePage() {
   const game = useGame(id);
   const auth = useAuth();
   const { detail, events } = game;
+  // "Live: Kimi K3, GLM 5.3, ..." so several games open in tabs can be told apart.
+  useTitle(detail ? `${game.status === 'running' ? 'Live: ' : ''}${detail.players.map((p) => p.name.replace(/ \(free\)$/, '')).join(', ')}` : 'Game');
 
   const [showThoughts, setShowThoughts] = useState(() => prefs.get('thoughts', true));
   const [reveal, setReveal] = useState(() => prefs.get('reveal', false));
@@ -151,7 +154,7 @@ export function GamePage() {
     try {
       await api.abort(id);
     } catch (err) {
-      alert(err instanceof ApiError && err.status === 401 ? 'Your login has expired. Log in again to stop games.' : String(err));
+      alert(err instanceof ApiError && err.status === 401 ? 'Your login has expired. Log in again to stop games.' : errorText(err));
     }
   };
 

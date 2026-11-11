@@ -74,6 +74,7 @@ export class ModelCatalog {
     private readonly configured: string[],
     private readonly log: { warn: (obj: unknown, msg: string) => void },
     private readonly check: typeof checkModel = checkModel,
+    private readonly now: () => number = Date.now,
   ) {}
 
   /** The current client. After a key change, model checks made with the old key no longer count. */
@@ -151,12 +152,15 @@ export class ModelCatalog {
   }
 
   private async listAll(client: OpenRouterClient): Promise<ModelOption[]> {
-    if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache.models;
-    if (Date.now() - this.failedAt < RETRY_MS) return this.fallback();
-    this.inflight ??= this.load(client).finally(() => {
-      this.inflight = null;
-    });
-    return this.inflight;
+    if (this.cache && this.now() - this.cache.at < CACHE_MS) return this.cache.models;
+    if (this.now() - this.failedAt >= RETRY_MS) {
+      this.inflight ??= this.load(client).finally(() => {
+        this.inflight = null;
+      });
+    }
+    // A list that's out of date beats waiting for the new one, or having none if OpenRouter can't be reached.
+    if (this.cache) return this.cache.models;
+    return this.inflight ?? this.fallback();
   }
 
   /** Every model in OpenRouter's catalogue by id, including ones refused or failing checks: for facts like release dates. */
@@ -188,12 +192,12 @@ export class ModelCatalog {
           if (a.featured) return rank.get(a.id)! - rank.get(b.id)!;
           return a.name.localeCompare(b.name);
         });
-      this.cache = { at: Date.now(), models };
+      this.cache = { at: this.now(), models };
       return models;
     } catch (err) {
       this.log.warn({ err }, 'Could not fetch the OpenRouter model list');
-      this.failedAt = Date.now();
-      return this.fallback();
+      this.failedAt = this.now();
+      return this.cache?.models ?? this.fallback();
     }
   }
 

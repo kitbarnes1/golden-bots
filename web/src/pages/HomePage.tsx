@@ -4,15 +4,17 @@ import type { GameSummary, ServerInfo } from '@gb/shared';
 import { Ball } from '../components/Ball';
 import { GameList } from '../components/GameList';
 import { NewGameForm } from '../components/NewGameForm';
-import { api } from '../lib/api';
+import { api, errorText } from '../lib/api';
+import { useTitle } from '../lib/useTitle';
 
 export function HomePage() {
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [games, setGames] = useState<GameSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  useTitle();
 
   useEffect(() => {
-    api.info().then(setInfo, (e: unknown) => setError(String(e)));
+    api.info().then(setInfo, (e: unknown) => setError(errorText(e)));
     const load = () => api.games(8).then(setGames, () => {});
     void load();
     const t = setInterval(load, 10_000);

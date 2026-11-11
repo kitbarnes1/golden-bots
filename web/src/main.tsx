@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router';
+import { BrowserRouter, Link, NavLink, Route, Routes, useLocation } from 'react-router';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { GamePage } from './pages/GamePage';
 import { GamesPage } from './pages/GamesPage';
 import { HomePage } from './pages/HomePage';
@@ -9,10 +10,12 @@ import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useFreshBuild } from './lib/useFreshBuild';
+import { useTitle } from './lib/useTitle';
 import './styles.css';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
+  const { pathname } = useLocation();
   useFreshBuild();
   return (
     <>
@@ -38,7 +41,10 @@ function Layout({ children }: { children: React.ReactNode }) {
             ))}
         </nav>
       </header>
-      <main>{children}</main>
+      <main>
+        {/* Keyed by page, so a page that broke doesn't stay broken after moving on. */}
+        <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
+      </main>
       <footer className="footer">
         A fan-made experiment inspired by a British TV game show. Not affiliated with the show or its makers. Prize money is imaginary.
       </footer>
@@ -47,6 +53,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function NotFound() {
+  useTitle('Not found');
   return (
     <div className="page">
       <h1>Nothing here</h1>
